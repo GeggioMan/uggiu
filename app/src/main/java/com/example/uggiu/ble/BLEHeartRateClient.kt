@@ -1,0 +1,405 @@
+package com.example.uggiu.ble
+
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Context
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.ParcelUuid
+import android.util.Log
+import java.util.UUID
+
+@SuppressLint("MissingPermission")
+class BLEHeartRateClient(
+    private val context: Context,
+    private val onHeartRateUpdated: (Int) -> Unit,
+    private val onBatteryLevelUpdated: (Int) -> Unit = {},
+    private val onStatusUpdated: (String) -> Unit
+) {
+    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
+    private var bluetoothGatt: BluetoothGatt? = null
+    
+    private val handler = Handler(Looper.getMainLooper())
+    private var isScanning = false
+    private var scanTimeoutRunnable: Runnable? = null
+    private var lastConnectedDevice: BluetoothDevice? = null
+    private var shouldAutoReconnect = false
+
+    private var reconnectRunnable: Runnable? = null
+    private var sessionSetupTimer: Runnable? = null
+    private var heartbeatTimer: Runnable? = null
+    private var isCurrentlyConnected = false
+    private var hasReceivedFirstPacket = false
+
+    private fun cancelReconnectionTasks() {
+        reconnectRunnable?.let { handler.removeCallbacks(it) }
+        reconnectRunnable = null
+        sessionSetupTimer?.let { handler.removeCallbacks(it) }
+        sessionSetupTimer = null
+        heartbeatTimer?.let { handler.removeCallbacks(it) }
+        heartbeatTimer = null
+    }
+
+    private fun startSessionSetupTimeout() {
+        sessionSetupTimer?.let { handler.removeCallbacks(it) }
+        sessionSetupTimer = Runnable {
+            if (shouldAutoReconnect && !hasReceivedFirstPacket) {
+                Log.w(TAG, "Timeout inizializzazione sessione (15s). Riconnessione...")
+                onStatusUpdated("Timeout connessione. Riprovo...")
+                close()
+                isCurrentlyConnected = false
+                scheduleReconnection()
+            }
+        }
+        handler.postDelayed(sessionSetupTimer!!, 15000)
+    }
+
+    private fun resetHeartbeatTimeout() {
+        heartbeatTimer?.let { handler.removeCallbacks(it) }
+        heartbeatTimer = Runnable {
+            if (shouldAutoReconnect && isCurrentlyConnected) {
+                Log.w(TAG, "Assenza di dati cardio da 10s. Riconnessione...")
+                onStatusUpdated("Nessun dato. Riconnessione...")
+                close()
+                isCurrentlyConnected = false
+                scheduleReconnection()
+            }
+        }
+        handler.postDelayed(heartbeatTimer!!, 10000)
+    }
+
+    private fun scheduleReconnection() {
+        cancelReconnectionTasks()
+        if (!shouldAutoReconnect || lastConnectedDevice == null) return
+
+        reconnectRunnable = Runnable {
+            if (shouldAutoReconnect && lastConnectedDevice != null) {
+                Log.i(TAG, "Tentativo di riconnessione automatica...")
+                onStatusUpdated("Riconnessione in corso...")
+                close()
+                connectToDevice(lastConnectedDevice!!)
+            }
+        }
+        handler.postDelayed(reconnectRunnable!!, 3000)
+    }
+
+    companion object {
+        private const val TAG = "BLEHeartRateClient"
+        
+        // Standard Heart Rate Service UUID
+        val HEART_RATE_SERVICE_UUID: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
+        // Standard Heart Rate Measurement Characteristic UUID
+        val HEART_RATE_MEASUREMENT_CHAR_UUID: UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
+        // Client Characteristic Configuration Descriptor (CCCD) UUID
+        val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+        // Standard Battery Service UUID
+        val BATTERY_SERVICE_UUID: UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
+        // Standard Battery Level Characteristic UUID
+        val BATTERY_LEVEL_CHAR_UUID: UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
+        
+        private const val SCAN_PERIOD: Long = 10000 // 10 seconds scan window
+    }
+
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val device = result.device
+            val deviceName = device.name ?: "Dispositivo Sconosciuto"
+            Log.d(TAG, "Dispositivo trovato: $deviceName - ${device.address}")
+            onStatusUpdated("Trovata band: $deviceName. Connessione in corso...")
+            
+            // Stop scanning and connect
+            stopScan()
+            connectToDevice(device)
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>) {
+            if (results.isNotEmpty()) {
+                val device = results[0].device
+                stopScan()
+                connectToDevice(device)
+            }
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            Log.e(TAG, "Scansione fallita con codice: $errorCode")
+            onStatusUpdated("Errore di scansione (Codice: $errorCode)")
+            stopScan()
+        }
+    }
+
+    fun startScan() {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            onStatusUpdated("Bluetooth non attivo")
+            return
+        }
+
+        if (isScanning) return
+
+        onStatusUpdated("Ricerca Huawei Band...")
+        isScanning = true
+
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(HEART_RATE_SERVICE_UUID))
+            .build()
+
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        // Scan only for heart rate services
+        bluetoothAdapter.bluetoothLeScanner?.startScan(listOf(filter), settings, scanCallback)
+
+        // Stop scan after time limit
+        scanTimeoutRunnable = Runnable {
+            if (isScanning) {
+                stopScan()
+                onStatusUpdated("Nessuna band trovata. Verifica che 'Condividi FC' sia attivo.")
+            }
+        }
+        handler.postDelayed(scanTimeoutRunnable!!, SCAN_PERIOD)
+    }
+
+    fun stopScan() {
+        if (!isScanning) return
+        bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        isScanning = false
+        scanTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        scanTimeoutRunnable = null
+    }
+
+    fun setAutoReconnect(enabled: Boolean) {
+        shouldAutoReconnect = enabled
+    }
+
+    private fun connectToDevice(device: BluetoothDevice) {
+        cancelReconnectionTasks()
+        onStatusUpdated("Inizializzazione connessione...")
+        lastConnectedDevice = device
+        isCurrentlyConnected = false
+        hasReceivedFirstPacket = false
+        
+        try {
+            bluetoothGatt = device.connectGatt(context, false, gattCallback)
+            if (bluetoothGatt == null) {
+                Log.e(TAG, "connectGatt ha restituito null.")
+                scheduleReconnection()
+                return
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Errore in connectGatt: ${e.message}")
+            scheduleReconnection()
+            return
+        }
+        
+        startSessionSetupTimeout()
+    }
+
+    fun disconnect() {
+        shouldAutoReconnect = false
+        isCurrentlyConnected = false
+        hasReceivedFirstPacket = false
+        cancelReconnectionTasks()
+        stopScan()
+        bluetoothGatt?.let { gatt ->
+            gatt.disconnect()
+            onStatusUpdated("Disconnesso")
+        }
+    }
+
+    fun close() {
+        bluetoothGatt?.close()
+        bluetoothGatt = null
+    }
+
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.i(TAG, "Connesso al GATT server. Avvio scoperta servizi...")
+                isCurrentlyConnected = true
+                cancelReconnectionTasks()
+                onStatusUpdated("Connesso")
+                gatt.discoverServices()
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.i(TAG, "Disconnesso dal GATT server. Status: $status")
+                isCurrentlyConnected = false
+                onStatusUpdated("Scollegato")
+                close()
+                
+                if (shouldAutoReconnect && lastConnectedDevice != null) {
+                    scheduleReconnection()
+                }
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.i(TAG, "Servizi scoperti con successo.")
+                setupHeartRateNotification(gatt)
+                readBatteryLevel(gatt)
+            } else {
+                Log.w(TAG, "Scoperta servizi fallita con stato: $status")
+                onStatusUpdated("Errore configurazione servizi ($status)")
+            }
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (characteristic.uuid == HEART_RATE_MEASUREMENT_CHAR_UUID) {
+                parseHeartRate(characteristic)
+            }
+        }
+
+        // For Android 13+ support
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            when (characteristic.uuid) {
+                HEART_RATE_MEASUREMENT_CHAR_UUID -> parseHeartRate(value)
+                BATTERY_LEVEL_CHAR_UUID -> parseBatteryLevel(value)
+            }
+        }
+
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (characteristic.uuid == BATTERY_LEVEL_CHAR_UUID) {
+                    val value = characteristic.value
+                    parseBatteryLevel(value)
+                }
+            }
+        }
+
+        // Android 13+ read callback
+        override fun onCharacteristicRead(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+            status: Int
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (characteristic.uuid == BATTERY_LEVEL_CHAR_UUID) {
+                    parseBatteryLevel(value)
+                }
+            }
+        }
+    }
+
+    private fun readBatteryLevel(gatt: BluetoothGatt) {
+        val service = gatt.getService(BATTERY_SERVICE_UUID) ?: return
+        val characteristic = service.getCharacteristic(BATTERY_LEVEL_CHAR_UUID) ?: return
+        
+        // Try to enable notifications for battery as well if supported
+        if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+            gatt.setCharacteristicNotification(characteristic, true)
+            characteristic.getDescriptor(CCCD_UUID)?.let { descriptor ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    @Suppress("DEPRECATION")
+                    gatt.writeDescriptor(descriptor)
+                }
+            }
+        }
+        
+        // Always do an initial read
+        gatt.readCharacteristic(characteristic)
+    }
+
+    private fun setupHeartRateNotification(gatt: BluetoothGatt) {
+        val service = gatt.getService(HEART_RATE_SERVICE_UUID)
+        if (service == null) {
+            Log.e(TAG, "Servizio frequenza cardiaca non trovato!")
+            onStatusUpdated("Errore: Servizio Cardio non supportato")
+            return
+        }
+
+        val characteristic = service.getCharacteristic(HEART_RATE_MEASUREMENT_CHAR_UUID)
+        if (characteristic == null) {
+            Log.e(TAG, "Caratteristica di misura non trovata!")
+            onStatusUpdated("Errore: Lettura Cardio non supportata")
+            return
+        }
+
+        // Enable local notifications
+        gatt.setCharacteristicNotification(characteristic, true)
+
+        // Write descriptor to notify BLE device to start sending measurements
+        val descriptor = characteristic.getDescriptor(CCCD_UUID)
+        if (descriptor != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(descriptor)
+            }
+            onStatusUpdated("Connesso")
+        } else {
+            Log.e(TAG, "Descrittore CCCD non trovato!")
+            onStatusUpdated("Errore configurazione notifiche")
+        }
+    }
+
+    private fun parseBatteryLevel(value: ByteArray) {
+        if (value.isEmpty()) return
+        val batteryLevel = value[0].toInt() and 0xFF
+        Log.d(TAG, "Livello batteria ricevuto: $batteryLevel%")
+        handler.post {
+            onBatteryLevelUpdated(batteryLevel)
+        }
+    }
+
+    private fun parseHeartRate(characteristic: BluetoothGattCharacteristic) {
+        val value = characteristic.value ?: return
+        parseHeartRate(value)
+    }
+
+    private fun parseHeartRate(value: ByteArray) {
+        if (value.isEmpty()) return
+        
+        // Byte 0 contains flags
+        val flag = value[0].toInt()
+        
+        // Bit 0 specifies format: 0 = 8-bit, 1 = 16-bit
+        val hrValue = if ((flag and 0x01) == 0) {
+            value[1].toInt() and 0xFF
+        } else {
+            ((value[2].toInt() and 0xFF) shl 8) or (value[1].toInt() and 0xFF)
+        }
+        
+        Log.d(TAG, "BPM ricevuto: $hrValue")
+        
+        // Cancel session setup timer on first packet, start heartbeat timer
+        if (shouldAutoReconnect) {
+            if (!hasReceivedFirstPacket) {
+                hasReceivedFirstPacket = true
+                sessionSetupTimer?.let { handler.removeCallbacks(it) }
+                sessionSetupTimer = null
+            }
+            resetHeartbeatTimeout()
+        }
+        
+        // Post to main thread
+        handler.post {
+            onHeartRateUpdated(hrValue)
+        }
+    }
+}

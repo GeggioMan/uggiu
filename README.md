@@ -1,6 +1,6 @@
 # uggiu - Heart Rate Monitor
 
-**uggiu** è un'applicazione Android moderna progettata per il monitoraggio della frequenza cardiaca in tempo reale utilizzando smartband Bluetooth Low Energy (BLE), come la Xiaomi Smart Band 9 o le Huawei Band.
+**uggiu** è un'applicazione Android moderna progettata per il monitoraggio della frequenza cardiaca in tempo reale utilizzando smartband Bluetooth Low Energy (BLE).
 
 ## 🚀 Funzionalità Principali
 

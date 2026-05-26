@@ -1,0 +1,47 @@
+# Project-wide ignore rules
+/.gradle
+/.kotlin
+/build
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+/.idea/modules.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/shelf
+/.idea/caches
+/.idea/modules
+/.idea/gradle.xml
+/.idea/misc.xml
+/.idea/deploymentTargetDropDown.xml
+/.idea/vcs.xml
+*.iml
+*.iws
+
+# Android Studio / IntelliJ IDEA
+.idea
+.idea/
+
+# Gradle
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log Files
+*.log
+
+# Android Studio captures
+/captures
+
+# Built, temporary, and generated files
+bin/
+gen/
+out/
+.externalNativeBuild
+.cxx
+
+# OS specific files
+.DS_Store
+Thumbs.db

@@ -158,7 +158,7 @@ class MainActivity : ComponentActivity() {
 
         // Alarm States (Synced with Service)
         val alarmBpmThreshold = remember { mutableIntStateOf(currentService?.alarmBpmThreshold ?: 120) }
-        val alarmDurationSeconds = remember { mutableIntStateOf(currentService?.alarmDurationSeconds ?: 0) }
+        val alarmDurationSeconds = remember { mutableIntStateOf(currentService?.alarmDurationSeconds ?: 10) }
         val isAlarmSoundEnabled = remember { mutableStateOf(currentService?.isAlarmSoundEnabled ?: true) }
 
         // Update service settings when UI changes

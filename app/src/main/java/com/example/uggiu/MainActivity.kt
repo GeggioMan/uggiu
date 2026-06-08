@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -97,6 +98,10 @@ class MainActivity : ComponentActivity() {
     private var workoutService by mutableStateOf<WorkoutService?>(null)
     private var isBound by mutableStateOf(false)
 
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as WorkoutService.WorkoutBinder
@@ -116,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
         val intent = Intent(this, WorkoutService::class.java)
         startService(intent)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        bindService(intent, serviceConnection, BIND_AUTO_CREATE)
 
         setContent {
             MaterialTheme(
@@ -155,6 +160,8 @@ class MainActivity : ComponentActivity() {
         val currentBpm by currentService?.currentBpm?.collectAsState(initial = 0) ?: remember { mutableIntStateOf(0) }
         val isSessionActive by currentService?.isSessionActive?.collectAsState(initial = false) ?: remember { mutableStateOf(false) }
         val batteryLevel by currentService?.batteryLevel?.collectAsState(initial = -1) ?: remember { mutableIntStateOf(-1) }
+        val rssi by currentService?.rssi?.collectAsState(initial = 0) ?: remember { mutableIntStateOf(0) }
+        val deviceAddress by currentService?.deviceAddress?.collectAsState(initial = "") ?: remember { mutableStateOf("") }
 
         // Alarm States (Synced with Service)
         val alarmBpmThreshold = remember { mutableIntStateOf(currentService?.alarmBpmThreshold ?: 120) }
@@ -223,6 +230,11 @@ class MainActivity : ComponentActivity() {
                         Icon(imageVector = Icons.Default.Info, contentDescription = "Help", tint = Color.Gray)
                     }
 
+                    if (isConnected && rssi < 0) {
+                        ProximityBadge(rssi = rssi)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
                     if (batteryLevel >= 0) {
                         BatteryBadge(level = batteryLevel)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -266,6 +278,7 @@ class MainActivity : ComponentActivity() {
                     activeSession = isSessionActive,
                     isConnected = isConnected,
                     statusText = bleStatus,
+                    deviceAddress = deviceAddress,
                     bpm = currentBpm,
                     onStartSession = { checkAndStart() },
                     onFinishSession = { workoutService?.stopWorkout() },
@@ -309,6 +322,35 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    fun ProximityBadge(rssi: Int) {
+        val label = when {
+            rssi > -60 -> "Immediata"
+            rssi > -75 -> "Vicino"
+            rssi > -90 -> "Medio"
+            else -> "Lontano"
+        }
+        val color = when {
+            rssi > -75 -> Color(0xFF4CAF50)
+            rssi > -90 -> Color(0xFFFFEB3B)
+            else -> Color(0xFFFF3D00)
+        }
+
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF141418))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = label,
+                color = color,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+
+    @Composable
     fun BatteryBadge(level: Int) {
         val icon = Icons.Default.Favorite
         val color = if (level > 20) Color(0xFF4CAF50) else Color(0xFFFF3D00)
@@ -341,6 +383,7 @@ class MainActivity : ComponentActivity() {
         activeSession: Boolean,
         isConnected: Boolean,
         statusText: String,
+        deviceAddress: String,
         bpm: Int,
         onStartSession: () -> Unit,
         onFinishSession: () -> Unit,
@@ -368,6 +411,14 @@ class MainActivity : ComponentActivity() {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = statusText, fontSize = 14.sp, color = Color.LightGray)
+                        if (isConnected && deviceAddress.isNotEmpty()) {
+                            Text(
+                                text = "ID: $deviceAddress",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
                         val isEnabled: Boolean
                         val buttonText: String
@@ -511,20 +562,63 @@ class MainActivity : ComponentActivity() {
             }
 
             item {
+                var selectedPeriod by remember { mutableIntStateOf(1) } // 1, 4, 8, 12 hours
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF141418)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(text = "Andamento Cardio", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Andamento Cardio",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(1, 4, 8, 12).forEach { hours ->
+                                    val isSelected = selectedPeriod == hours
+                                    Text(
+                                        text = "${hours}h",
+                                        color = if (isSelected) Color(0xFF00E5FF) else Color.Gray,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(if (isSelected) Color(0xFF1F2E35) else Color.Transparent)
+                                            .clickable { selectedPeriod = hours }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(10.dp))
+                        
+                        val maxPointsToKeep = selectedPeriod * 3600
+                        val filteredPoints = if (heartRatePoints.size > maxPointsToKeep) {
+                            heartRatePoints.takeLast(maxPointsToKeep)
+                        } else {
+                            heartRatePoints
+                        }
+                        val downsampledPoints = remember(filteredPoints.size, selectedPeriod) {
+                            downsample(filteredPoints, maxTargetSize = 300, totalPossiblePoints = maxPointsToKeep)
+                        }
+                        
                         RealTimeChart(
-                            points = downsample(heartRatePoints),
+                            points = downsampledPoints,
                             minVal = 50,
                             maxVal = 170,
                             lineColor = Color(0xFFFF3D00),
-                            modifier = Modifier.fillMaxWidth().height(130.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(130.dp)
                         )
                     }
                 }
@@ -556,6 +650,7 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent.createChooser(intent, "Esporta dati sessione"))
         } catch (e: Exception) {
             Toast.makeText(this, "Errore durante l'esportazione CSV", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "CSV Export error", e)
         }
     }
 
@@ -679,12 +774,58 @@ class MainActivity : ComponentActivity() {
                             Text("Minimo: ${session.getHeartRateHistory().minOrNull() ?: 0}", fontSize = 13.sp, color = Color.White)
                         }
                         Spacer(modifier = Modifier.height(16.dp))
+                        var selectedPeriod by remember { mutableIntStateOf(1) } // 1, 4, 8, 12 hours
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Andamento Grafico Sessione:",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.LightGray
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(1, 4, 8, 12).forEach { hours ->
+                                    val isSelectedPeriod = selectedPeriod == hours
+                                    Text(
+                                        text = "${hours}h",
+                                        color = if (isSelectedPeriod) Color(0xFF00E5FF) else Color.Gray,
+                                        fontWeight = if (isSelectedPeriod) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(if (isSelectedPeriod) Color(0xFF1F2E35) else Color.Transparent)
+                                            .clickable { selectedPeriod = hours }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val historyPoints = remember(session) { session.getHeartRateHistory() }
+                        val maxPointsToKeep = selectedPeriod * 3600
+                        val filteredPoints = if (historyPoints.size > maxPointsToKeep) {
+                            historyPoints.takeLast(maxPointsToKeep)
+                        } else {
+                            historyPoints
+                        }
+                        val downsampledPoints = remember(filteredPoints.size, selectedPeriod) {
+                            downsample(filteredPoints, maxTargetSize = 300, totalPossiblePoints = maxPointsToKeep)
+                        }
+                        
                         RealTimeChart(
-                            points = downsample(session.getHeartRateHistory()),
+                            points = downsampledPoints,
                             minVal = 50,
                             maxVal = 170,
                             lineColor = Color(0xFF00E5FF),
-                            modifier = Modifier.fillMaxWidth().height(100.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

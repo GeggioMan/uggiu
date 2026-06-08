@@ -54,16 +54,23 @@ class WorkoutService : Service() {
     private val _batteryLevel = MutableStateFlow(-1)
     val batteryLevel: StateFlow<Int> = _batteryLevel.asStateFlow()
 
+    private val _rssi = MutableStateFlow(0)
+    val rssi: StateFlow<Int> = _rssi.asStateFlow()
+
+    private val _deviceAddress = MutableStateFlow("")
+    val deviceAddress: StateFlow<String> = _deviceAddress.asStateFlow()
+
     private val _isSessionActive = MutableStateFlow(false)
     val isSessionActive: StateFlow<Boolean> = _isSessionActive.asStateFlow()
 
+    private var recordingJob: Job? = null
     val heartRatePoints = mutableListOf<Int>()
     private var sessionStartTime: Instant? = null
     private var currentSessionId: Int? = null
 
     // Alarm Settings (will be updated from Activity)
     var alarmBpmThreshold = 120
-    var alarmDurationSeconds = 0
+    var alarmDurationSeconds = 10
     var isAlarmSoundEnabled = true
 
     private var highHrStartTime: Instant? = null
@@ -92,14 +99,19 @@ class WorkoutService : Service() {
             onHeartRateUpdated = { bpm ->
                 _currentBpm.value = bpm
                 if (_isSessionActive.value) {
-                    heartRatePoints.add(bpm)
-                    checkAlarm(bpm)
+                    if (bpm > 0) checkAlarm(bpm)
                     updateNotification(bpm)
                 }
             },
             onBatteryLevelUpdated = { level ->
                 _batteryLevel.value = level
                 updateNotification(_currentBpm.value)
+            },
+            onRssiUpdated = { valRssi ->
+                _rssi.value = valRssi
+            },
+            onDeviceConnected = { _, address ->
+                _deviceAddress.value = address
             },
             onStatusUpdated = { status ->
                 _bleStatus.value = status
@@ -131,11 +143,32 @@ class WorkoutService : Service() {
         highHrStartTime = null
         lastAlarmTime = null
         startAutoSaveJob()
+        startRecordingJob()
         updateNotification(_currentBpm.value)
+    }
+
+    private fun startRecordingJob() {
+        recordingJob?.cancel()
+        recordingJob = serviceScope.launch {
+            var rssiTick = 0
+            while (_isSessionActive.value) {
+                // Collect one point per second
+                heartRatePoints.add(_currentBpm.value)
+                
+                // Poll RSSI every 5 seconds
+                if (rssiTick % 5 == 0) {
+                    bleClient.readRssi()
+                }
+                rssiTick++
+
+                delay(1000)
+            }
+        }
     }
 
     fun stopWorkout() {
         autoSaveJob?.cancel()
+        recordingJob?.cancel()
         bleClient.setAutoReconnect(false)
         if (heartRatePoints.isNotEmpty()) {
             saveWorkoutSessionToDb()

@@ -26,6 +26,8 @@ class BLEHeartRateClient(
     private val context: Context,
     private val onHeartRateUpdated: (Int) -> Unit,
     private val onBatteryLevelUpdated: (Int) -> Unit = {},
+    private val onRssiUpdated: (Int) -> Unit = {},
+    private val onDeviceConnected: (String, String) -> Unit = { _, _ -> },
     private val onStatusUpdated: (String) -> Unit
 ) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -41,6 +43,7 @@ class BLEHeartRateClient(
     private var reconnectRunnable: Runnable? = null
     private var sessionSetupTimer: Runnable? = null
     private var heartbeatTimer: Runnable? = null
+    private var dataTimeoutTimer: Runnable? = null
     private var isCurrentlyConnected = false
     private var hasReceivedFirstPacket = false
 
@@ -51,6 +54,8 @@ class BLEHeartRateClient(
         sessionSetupTimer = null
         heartbeatTimer?.let { handler.removeCallbacks(it) }
         heartbeatTimer = null
+        dataTimeoutTimer?.let { handler.removeCallbacks(it) }
+        dataTimeoutTimer = null
     }
 
     private fun startSessionSetupTimeout() {
@@ -73,12 +78,23 @@ class BLEHeartRateClient(
             if (shouldAutoReconnect && isCurrentlyConnected) {
                 Log.w(TAG, "Assenza di dati cardio da 10s. Riconnessione...")
                 onStatusUpdated("Nessun dato. Riconnessione...")
+                onHeartRateUpdated(0)
                 close()
                 isCurrentlyConnected = false
                 scheduleReconnection()
             }
         }
         handler.postDelayed(heartbeatTimer!!, 10000)
+
+        // Reset BPM to 0 if no data for 3 seconds (but don't reconnect yet)
+        dataTimeoutTimer?.let { handler.removeCallbacks(it) }
+        dataTimeoutTimer = Runnable {
+            if (isCurrentlyConnected) {
+                Log.d(TAG, "Dati non rilevati (timeout 3s).")
+                onHeartRateUpdated(0)
+            }
+        }
+        handler.postDelayed(dataTimeoutTimer!!, 3000)
     }
 
     private fun scheduleReconnection() {
@@ -225,18 +241,26 @@ class BLEHeartRateClient(
         bluetoothGatt = null
     }
 
+    fun readRssi() {
+        bluetoothGatt?.readRemoteRssi()
+    }
+
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "Connesso al GATT server. Avvio scoperta servizi...")
                 isCurrentlyConnected = true
                 cancelReconnectionTasks()
+                val deviceName = gatt.device.name ?: "Sconosciuto"
+                val deviceAddress = gatt.device.address
+                handler.post { onDeviceConnected(deviceName, deviceAddress) }
                 onStatusUpdated("Connesso")
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnesso dal GATT server. Status: $status")
                 isCurrentlyConnected = false
                 onStatusUpdated("Scollegato")
+                onHeartRateUpdated(0) // Reset BPM on disconnect
                 close()
                 
                 if (shouldAutoReconnect && lastConnectedDevice != null) {
@@ -295,6 +319,12 @@ class BLEHeartRateClient(
                 if (characteristic.uuid == BATTERY_LEVEL_CHAR_UUID) {
                     parseBatteryLevel(value)
                 }
+            }
+        }
+
+        override fun onReadRemoteRssi(gatt: BluetoothGatt, rssi: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                handler.post { onRssiUpdated(rssi) }
             }
         }
     }
@@ -378,6 +408,22 @@ class BLEHeartRateClient(
         // Byte 0 contains flags
         val flag = value[0].toInt()
         
+        // Bits 1 & 2 indicate sensor contact status:
+        // 0 & 1: Sensor Contact feature is not supported
+        // 2: Sensor Contact feature is supported, but contact is not detected
+        // 3: Sensor Contact feature is supported and contact is detected
+        val sensorContactDetected = if ((flag and 0x02) != 0) {
+            (flag and 0x04) != 0
+        } else {
+            true // Feature not supported, assume contact to avoid blocking
+        }
+
+        if (!sensorContactDetected) {
+            Log.d(TAG, "Contatto sensore non rilevato. Invio 0 BPM.")
+            handler.post { onHeartRateUpdated(0) }
+            return
+        }
+
         // Bit 0 specifies format: 0 = 8-bit, 1 = 16-bit
         val hrValue = if ((flag and 0x01) == 0) {
             value[1].toInt() and 0xFF

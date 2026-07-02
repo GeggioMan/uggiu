@@ -48,6 +48,13 @@ android {
     }
 }
 
+tasks.register<Copy>("generateUggiuApk") {
+    from("build/outputs/apk/debug/app-debug.apk")
+    into("../apk")
+    rename("app-debug.apk", "uggiu.apk")
+    dependsOn("assembleDebug")
+}
+
 dependencies {
     // Core Android and Lifecycle
     implementation("androidx.core:core-ktx:1.12.0")

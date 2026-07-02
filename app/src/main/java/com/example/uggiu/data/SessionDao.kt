@@ -27,4 +27,17 @@ interface SessionDao {
 
     @Query("DELETE FROM workout_sessions")
     suspend fun deleteAllSessions()
+
+    // Crisis Records
+    @Query("SELECT * FROM crises ORDER BY startTime DESC")
+    fun getAllCrises(): Flow<List<CrisisRecord>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCrisis(crisis: CrisisRecord): Long
+
+    @Update
+    suspend fun updateCrisis(crisis: CrisisRecord)
+
+    @Delete
+    suspend fun deleteCrisis(crisis: CrisisRecord)
 }

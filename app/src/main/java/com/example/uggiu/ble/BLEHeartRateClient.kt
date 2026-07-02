@@ -28,6 +28,7 @@ class BLEHeartRateClient(
     private val onBatteryLevelUpdated: (Int) -> Unit = {},
     private val onRssiUpdated: (Int) -> Unit = {},
     private val onDeviceConnected: (String, String) -> Unit = { _, _ -> },
+    private val onDeviceFound: (BluetoothDevice) -> Unit = {},
     private val onStatusUpdated: (String) -> Unit
 ) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -35,7 +36,8 @@ class BLEHeartRateClient(
     private var bluetoothGatt: BluetoothGatt? = null
     
     private val handler = Handler(Looper.getMainLooper())
-    private var isScanning = false
+    var isScanning = false
+        private set
     private var scanTimeoutRunnable: Runnable? = null
     private var lastConnectedDevice: BluetoothDevice? = null
     private var shouldAutoReconnect = false
@@ -135,18 +137,12 @@ class BLEHeartRateClient(
             val device = result.device
             val deviceName = device.name ?: "Dispositivo Sconosciuto"
             Log.d(TAG, "Dispositivo trovato: $deviceName - ${device.address}")
-            onStatusUpdated("Trovata band: $deviceName. Connessione in corso...")
-            
-            // Stop scanning and connect
-            stopScan()
-            connectToDevice(device)
+            onDeviceFound(device)
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            if (results.isNotEmpty()) {
-                val device = results[0].device
-                stopScan()
-                connectToDevice(device)
+            results.forEach { result ->
+                onDeviceFound(result.device)
             }
         }
 
@@ -201,9 +197,9 @@ class BLEHeartRateClient(
         shouldAutoReconnect = enabled
     }
 
-    private fun connectToDevice(device: BluetoothDevice) {
+    fun connectToDevice(device: BluetoothDevice) {
         cancelReconnectionTasks()
-        onStatusUpdated("Inizializzazione connessione...")
+        onStatusUpdated("Start up...")
         lastConnectedDevice = device
         isCurrentlyConnected = false
         hasReceivedFirstPacket = false
@@ -211,12 +207,12 @@ class BLEHeartRateClient(
         try {
             bluetoothGatt = device.connectGatt(context, false, gattCallback)
             if (bluetoothGatt == null) {
-                Log.e(TAG, "connectGatt ha restituito null.")
+                Log.e(TAG, "connectGatt error.")
                 scheduleReconnection()
                 return
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Errore in connectGatt: ${e.message}")
+            Log.e(TAG, "Gatt Error: ${e.message}")
             scheduleReconnection()
             return
         }
@@ -251,7 +247,7 @@ class BLEHeartRateClient(
                 Log.i(TAG, "Connesso al GATT server. Avvio scoperta servizi...")
                 isCurrentlyConnected = true
                 cancelReconnectionTasks()
-                val deviceName = gatt.device.name ?: "Sconosciuto"
+                val deviceName = gatt.device.name ?: "---"
                 val deviceAddress = gatt.device.address
                 handler.post { onDeviceConnected(deviceName, deviceAddress) }
                 onStatusUpdated("Connesso")

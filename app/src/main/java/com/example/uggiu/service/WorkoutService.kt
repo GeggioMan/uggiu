@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothDevice
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
@@ -19,6 +20,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.example.uggiu.MainActivity
 import com.example.uggiu.ble.BLEHeartRateClient
+import com.example.uggiu.data.CrisisRecord
 import com.example.uggiu.data.SessionDatabase
 import com.example.uggiu.data.WorkoutSession
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +34,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
+
+data class CrisisEntry(
+    val id: Int,
+    val startTime: Instant,
+    val endTime: Instant? = null,
+    val maxBpm: Int = 0,
+    val lastUpdate: Long = 0
+) {
+    val durationSeconds: Long
+        get() = Duration.between(startTime, endTime ?: Instant.now()).seconds
+}
 
 class WorkoutService : Service() {
 
@@ -63,6 +76,15 @@ class WorkoutService : Service() {
     private val _isSessionActive = MutableStateFlow(false)
     val isSessionActive: StateFlow<Boolean> = _isSessionActive.asStateFlow()
 
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _discoveredDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
+    val discoveredDevices: StateFlow<List<BluetoothDevice>> = _discoveredDevices.asStateFlow()
+
+    private val _crises = MutableStateFlow<List<CrisisEntry>>(emptyList())
+    val crises: StateFlow<List<CrisisEntry>> = _crises.asStateFlow()
+
     private var recordingJob: Job? = null
     val heartRatePoints = mutableListOf<Int>()
     private var sessionStartTime: Instant? = null
@@ -75,6 +97,7 @@ class WorkoutService : Service() {
 
     private var highHrStartTime: Instant? = null
     private var lastAlarmTime: Instant? = null
+    private var activeCrisisDbId: Int? = null
     private var autoSaveJob: Job? = null
 
     companion object {
@@ -113,9 +136,16 @@ class WorkoutService : Service() {
             onDeviceConnected = { _, address ->
                 _deviceAddress.value = address
             },
+            onDeviceFound = { device ->
+                val currentList = _discoveredDevices.value
+                if (currentList.none { it.address == device.address }) {
+                    _discoveredDevices.value = currentList + device
+                }
+            },
             onStatusUpdated = { status ->
                 _bleStatus.value = status
                 _isConnected.value = (status == "Connesso") || status.contains("Cardio Connesso") || status.contains("Ricezione dati")
+                _isScanning.value = bleClient.isScanning
                 updateNotification(_currentBpm.value)
             },
         )
@@ -131,7 +161,20 @@ class WorkoutService : Service() {
     }
 
     fun startScan() {
+        _discoveredDevices.value = emptyList()
         bleClient.startScan()
+        _isScanning.value = bleClient.isScanning
+    }
+
+    fun stopScan() {
+        bleClient.stopScan()
+        _isScanning.value = bleClient.isScanning
+    }
+
+    fun connectToDevice(device: BluetoothDevice) {
+        bleClient.stopScan()
+        _isScanning.value = bleClient.isScanning
+        bleClient.connectToDevice(device)
     }
 
     fun startWorkout() {
@@ -139,6 +182,7 @@ class WorkoutService : Service() {
         bleClient.setAutoReconnect(true)
         sessionStartTime = Instant.now()
         heartRatePoints.clear()
+        _crises.value = emptyList()
         currentSessionId = null
         highHrStartTime = null
         lastAlarmTime = null
@@ -152,9 +196,20 @@ class WorkoutService : Service() {
         recordingJob = serviceScope.launch {
             var rssiTick = 0
             while (_isSessionActive.value) {
+                val currentBpmVal = _currentBpm.value
                 // Collect one point per second
-                heartRatePoints.add(_currentBpm.value)
+                heartRatePoints.add(currentBpmVal)
                 
+                // Crisis logic: update UI flow if a crisis is active to refresh timer
+                if (highHrStartTime != null) {
+                    val currentList = _crises.value.toMutableList()
+                    if (currentList.isNotEmpty() && currentList[0].endTime == null) {
+                        // Copy the entry with a new timestamp to force Compose recomposition
+                        currentList[0] = currentList[0].copy(lastUpdate = System.currentTimeMillis())
+                        _crises.value = currentList
+                    }
+                }
+
                 // Poll RSSI every 5 seconds
                 if (rssiTick % 5 == 0) {
                     bleClient.readRssi()
@@ -169,14 +224,53 @@ class WorkoutService : Service() {
     fun stopWorkout() {
         autoSaveJob?.cancel()
         recordingJob?.cancel()
-        bleClient.setAutoReconnect(false)
-        if (heartRatePoints.isNotEmpty()) {
-            saveWorkoutSessionToDb()
+        
+        serviceScope.launch {
+            // Close any active crisis before stopping
+            if (highHrStartTime != null) {
+                finalizeActiveCrisis()
+            }
+
+            if (heartRatePoints.isNotEmpty()) {
+                autoSaveSession()
+            }
+            bleClient.setAutoReconnect(false)
+            bleClient.disconnect()
+            
+            _isSessionActive.value = false
+            _currentBpm.value = 0
+            currentSessionId = null
+            
+            updateNotification(0)
+            stopForeground(STOP_FOREGROUND_DETACH)
+            stopSelf()
         }
-        _isSessionActive.value = false
-        updateNotification(0)
-        stopForeground(STOP_FOREGROUND_DETACH)
-        stopSelf()
+    }
+
+    private suspend fun finalizeActiveCrisis() {
+        val currentList = _crises.value.toMutableList()
+        if (currentList.isNotEmpty() && currentList[0].endTime == null) {
+            val endTime = Instant.now()
+            val finishedCrisis = currentList[0].copy(endTime = endTime)
+            currentList[0] = finishedCrisis
+            _crises.value = currentList
+            
+            // Update DB
+            val start = finishedCrisis.startTime.toEpochMilli()
+            val end = finishedCrisis.endTime?.toEpochMilli() ?: System.currentTimeMillis()
+            val record = CrisisRecord(
+                id = activeCrisisDbId ?: 0,
+                startTime = start,
+                endTime = end,
+                maxBpm = finishedCrisis.maxBpm,
+                averageBpm = 0,
+                sessionId = currentSessionId
+            )
+            db.sessionDao().updateCrisis(record)
+        }
+        highHrStartTime = null
+        lastAlarmTime = null
+        activeCrisisDbId = null
     }
 
     private fun startAutoSaveJob() {
@@ -216,17 +310,6 @@ class WorkoutService : Service() {
         }
     }
 
-    private fun saveWorkoutSessionToDb() {
-        serviceScope.launch {
-            autoSaveSession()
-            _currentBpm.value = 0
-            currentSessionId = null
-            _isConnected.value = false
-            bleClient.disconnect()
-            _bleStatus.value = "Scollegato"
-        }
-    }
-
     private fun checkAlarm(bpm: Int) {
         if (bpm > alarmBpmThreshold) {
             if (highHrStartTime == null) {
@@ -234,6 +317,50 @@ class WorkoutService : Service() {
             } else {
                 val duration = Duration.between(highHrStartTime, Instant.now()).seconds
                 if (duration >= alarmDurationSeconds) {
+                    // Official Crisis Condition Met
+                    if (activeCrisisDbId == null) {
+                        val start = highHrStartTime!!
+                        // Start a new crisis entry in UI
+                        val newCrisis = CrisisEntry(id = _crises.value.size, startTime = start, maxBpm = bpm)
+                        _crises.value = listOf(newCrisis) + _crises.value
+                        
+                        // Save to DB immediately as active
+                        serviceScope.launch {
+                            val record = CrisisRecord(
+                                startTime = start.toEpochMilli(),
+                                endTime = null,
+                                maxBpm = bpm,
+                                averageBpm = 0,
+                                sessionId = currentSessionId
+                            )
+                            val id = db.sessionDao().insertCrisis(record)
+                            activeCrisisDbId = id.toInt()
+                        }
+                    } else {
+                        // Crisis already active, update max BPM
+                        val currentList = _crises.value.toMutableList()
+                        if (currentList.isNotEmpty() && currentList[0].endTime == null) {
+                            if (bpm > currentList[0].maxBpm) {
+                                val updatedCrisis = currentList[0].copy(maxBpm = bpm)
+                                currentList[0] = updatedCrisis
+                                _crises.value = currentList
+                                
+                                serviceScope.launch {
+                                    val record = CrisisRecord(
+                                        id = activeCrisisDbId ?: 0,
+                                        startTime = updatedCrisis.startTime.toEpochMilli(),
+                                        endTime = null,
+                                        maxBpm = updatedCrisis.maxBpm,
+                                        averageBpm = 0,
+                                        sessionId = currentSessionId
+                                    )
+                                    db.sessionDao().updateCrisis(record)
+                                }
+                            }
+                        }
+                    }
+
+                    // Trigger actual alarm feedback
                     if (lastAlarmTime == null || Duration.between(lastAlarmTime, Instant.now()).seconds >= 5) {
                         triggerAlarm(bpm)
                         lastAlarmTime = Instant.now()
@@ -241,8 +368,15 @@ class WorkoutService : Service() {
                 }
             }
         } else {
-            highHrStartTime = null
-            lastAlarmTime = null
+            if (activeCrisisDbId != null) {
+                serviceScope.launch {
+                    finalizeActiveCrisis()
+                }
+            } else {
+                // Just reset the high HR timer if no official crisis was started
+                highHrStartTime = null
+                lastAlarmTime = null
+            }
         }
     }
 

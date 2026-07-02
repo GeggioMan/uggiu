@@ -1,8 +1,8 @@
 package com.example.uggiu
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
@@ -42,17 +42,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -60,6 +62,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,11 +81,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import com.example.uggiu.data.SessionDatabase
 import com.example.uggiu.data.WorkoutSession
@@ -152,6 +159,7 @@ class MainActivity : ComponentActivity() {
         var showHistoryScreen by remember { mutableStateOf(false) }
         var showHelpDialog by remember { mutableStateOf(false) }
         val sessions by db.sessionDao().getAllSessions().collectAsState(initial = emptyList())
+        val crisesHistory by db.sessionDao().getAllCrises().collectAsState(initial = emptyList())
 
         // Service States
         val currentService = workoutService
@@ -162,30 +170,21 @@ class MainActivity : ComponentActivity() {
         val batteryLevel by currentService?.batteryLevel?.collectAsState(initial = -1) ?: remember { mutableIntStateOf(-1) }
         val rssi by currentService?.rssi?.collectAsState(initial = 0) ?: remember { mutableIntStateOf(0) }
         val deviceAddress by currentService?.deviceAddress?.collectAsState(initial = "") ?: remember { mutableStateOf("") }
-
-        // Alarm States (Synced with Service)
-        val alarmBpmThreshold = remember { mutableIntStateOf(currentService?.alarmBpmThreshold ?: 120) }
-        val alarmDurationSeconds = remember { mutableIntStateOf(currentService?.alarmDurationSeconds ?: 10) }
-        val isAlarmSoundEnabled = remember { mutableStateOf(currentService?.isAlarmSoundEnabled ?: true) }
-
-        // Update service settings when UI changes
-        currentService?.let { service ->
-            service.alarmBpmThreshold = alarmBpmThreshold.intValue
-            service.alarmDurationSeconds = alarmDurationSeconds.intValue
-            service.isAlarmSoundEnabled = isAlarmSoundEnabled.value
-        }
+        val isScanning by currentService?.isScanning?.collectAsState(initial = false) ?: remember { mutableStateOf(false) }
+        val discoveredDevices by currentService?.discoveredDevices?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
+        val crises by currentService?.crises?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
 
         val requestPermissionsLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             if (permissions.values.all { it }) {
-                workoutService?.startScan()
+                currentService?.startScan()
             } else {
                 Toast.makeText(context, "Permessi necessari non concessi.", Toast.LENGTH_SHORT).show()
             }
         }
 
-        fun checkAndStart() {
+        fun checkPermissions(): Boolean {
             val requiredPermissions = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
@@ -202,14 +201,49 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
             }
 
-            if (missing.isNotEmpty()) {
+            return if (missing.isNotEmpty()) {
                 requestPermissionsLauncher.launch(missing.toTypedArray())
+                false
             } else {
-                if (!isConnected) {
-                    workoutService?.startScan()
-                }
-                workoutService?.startWorkout()
+                true
             }
+        }
+
+        // Lifecycle observer to start/stop scanning automatically
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner, currentService, isSessionActive) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    if (!isSessionActive && checkPermissions()) {
+                        currentService?.startScan()
+                    }
+                } else if (event == Lifecycle.Event.ON_PAUSE) {
+                    currentService?.stopScan()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+
+        // Stop scanning immediately when a session starts
+        LaunchedEffect(isSessionActive) {
+            if (isSessionActive) {
+                currentService?.stopScan()
+            }
+        }
+
+        // Alarm States (Synced with Service)
+        val alarmBpmThreshold = remember { mutableIntStateOf(currentService?.alarmBpmThreshold ?: 120) }
+        val alarmDurationSeconds = remember { mutableIntStateOf(currentService?.alarmDurationSeconds ?: 10) }
+        val isAlarmSoundEnabled = remember { mutableStateOf(currentService?.isAlarmSoundEnabled ?: true) }
+
+        // Update service settings when UI changes
+        currentService?.let { service ->
+            service.alarmBpmThreshold = alarmBpmThreshold.intValue
+            service.alarmDurationSeconds = alarmDurationSeconds.intValue
+            service.isAlarmSoundEnabled = isAlarmSoundEnabled.value
         }
 
         Column(
@@ -226,6 +260,16 @@ class MainActivity : ComponentActivity() {
                 Text(text = "uggiu", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E5FF))
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isSessionActive && !showHistoryScreen) {
+                        IconButton(onClick = { if (checkPermissions()) currentService?.startScan() }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Aggiorna",
+                                tint = if (isScanning) Color(0xFF00E5FF) else Color.Gray
+                            )
+                        }
+                    }
+
                     IconButton(onClick = { showHelpDialog = true }) {
                         Icon(imageVector = Icons.Default.Info, contentDescription = "Help", tint = Color.Gray)
                     }
@@ -263,29 +307,33 @@ class MainActivity : ComponentActivity() {
 
             if (showHistoryScreen) {
                 HistoryScreen(
-                    sessions = sessions,
-                    onDelete = { lifecycleScope.launch { db.sessionDao().deleteSession(it) } },
+                    crises = crisesHistory,
+                    onDelete = { lifecycleScope.launch { db.sessionDao().deleteCrisis(it) } },
                     onDeleteMultiple = { selectedIds ->
                         lifecycleScope.launch {
-                            sessions.filter { it.id in selectedIds }.forEach { db.sessionDao().deleteSession(it) }
+                            crisesHistory.filter { it.id in selectedIds }.forEach { db.sessionDao().deleteCrisis(it) }
                         }
-                    },
-                    onShare = { shareSessionCsv(it) },
-                    currentSessionId = if (isSessionActive) -1 else null // Simplification for badge in history
+                    }
                 )
             } else {
                 DashboardScreen(
                     activeSession = isSessionActive,
                     isConnected = isConnected,
+                    isScanning = isScanning,
+                    discoveredDevices = discoveredDevices,
                     statusText = bleStatus,
                     deviceAddress = deviceAddress,
                     bpm = currentBpm,
-                    onStartSession = { checkAndStart() },
                     onFinishSession = { workoutService?.stopWorkout() },
+                    onSelectDevice = { device ->
+                        workoutService?.connectToDevice(device)
+                        workoutService?.startWorkout()
+                    },
                     alarmBpmThreshold = alarmBpmThreshold,
                     alarmDurationSeconds = alarmDurationSeconds,
                     isAlarmSoundEnabled = isAlarmSoundEnabled,
-                    heartRatePoints = workoutService?.heartRatePoints ?: emptyList()
+                    heartRatePoints = workoutService?.heartRatePoints ?: emptyList(),
+                    crises = crises.take(1) // Only show the last one of the current session
                 )
             }
         }
@@ -382,84 +430,96 @@ class MainActivity : ComponentActivity() {
     fun DashboardScreen(
         activeSession: Boolean,
         isConnected: Boolean,
+        isScanning: Boolean,
+        discoveredDevices: List<android.bluetooth.BluetoothDevice>,
         statusText: String,
         deviceAddress: String,
         bpm: Int,
-        onStartSession: () -> Unit,
         onFinishSession: () -> Unit,
+        onSelectDevice: (android.bluetooth.BluetoothDevice) -> Unit,
         alarmBpmThreshold: MutableState<Int>,
         alarmDurationSeconds: MutableState<Int>,
         isAlarmSoundEnabled: MutableState<Boolean>,
-        heartRatePoints: List<Int>
+        heartRatePoints: List<Int>,
+        crises: List<com.example.uggiu.service.CrisisEntry>
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141418)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+
+            // Scan Mode
+            if (!activeSession) {
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp)) {
                         Text(
-                            text = if (activeSession) "Sessione in Corso" else "Nuova Sessione",
+                            text = if (isScanning) "Ricerca dispositivi..." else "Ricerca completata",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = statusText, fontSize = 14.sp, color = Color.LightGray)
-                        if (isConnected && deviceAddress.isNotEmpty()) {
-                            Text(
-                                text = "ID: $deviceAddress",
-                                fontSize = 11.sp,
-                                color = Color.Gray,
-                                fontWeight = FontWeight.Normal
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        val isEnabled: Boolean
-                        val buttonText: String
-                        val buttonColor: Color
-                        
-                        if (activeSession) {
-                            if (isConnected) {
-                                buttonText = "TERMINA"
-                                buttonColor = Color(0xFFFF3D00)
-                                isEnabled = true
-                            } else {
-                                buttonText = "CONNETTENDO..."
-                                buttonColor = Color.Gray
-                                isEnabled = false
-                            }
-                        } else {
-                            buttonText = "AVVIA"
-                            buttonColor = Color(0xFF00E5FF)
-                            isEnabled = true
-                        }
-
-                        Button(
-                            onClick = { if (activeSession) onFinishSession() else onStartSession() },
-                            enabled = isEnabled,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = buttonColor,
-                                disabledContainerColor = Color.DarkGray
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = buttonText,
-                                color = if (isEnabled && !activeSession) Color.Black else Color.White,
-                                fontWeight = FontWeight.Bold
+                        if (isScanning) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF00E5FF),
+                                trackColor = Color.DarkGray
                             )
                         }
                     }
                 }
             }
 
+            // Device List Selection
+            if (!activeSession && discoveredDevices.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Dispositivi Trovati (Seleziona per connettere):",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+                items(discoveredDevices) { device ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectDevice(device) },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F24)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                @SuppressLint("MissingPermission")
+                                val deviceName = device.name ?: "Dispositivo Sconosciuto"
+                                Text(
+                                    text = deviceName,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = device.address,
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.List, // Reusing list icon for "select"
+                                contentDescription = "Select",
+                                tint = Color(0xFF00E5FF)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Settings
             if (!activeSession) {
                 item {
                     Card(
@@ -528,6 +588,65 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            //Connection status and actions
+            if (activeSession) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141418)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+
+                            Text(text = statusText, fontSize = 14.sp, color = Color.LightGray)
+                            if (isConnected && deviceAddress.isNotEmpty()) {
+                                Text(
+                                    text = "ID: $deviceAddress",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val buttonText = if (isConnected) "STOP" else "EXIT"
+
+                            Button(
+                                onClick = onFinishSession,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFF3D00)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = buttonText,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Crisis List
+            if (activeSession && crises.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Rilevazioni Crisi (BPM > ${alarmBpmThreshold.value})",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    )
+                }
+                items(crises) { crisis ->
+                    CrisisItem(crisis)
+                }
+            }
+
+            //Heart Rate Indicator
             if (activeSession) {
                 item {
                     Card(
@@ -540,7 +659,7 @@ class MainActivity : ComponentActivity() {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Text("BATTITI CARDIO", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                            Text("Heart Rate", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(10.dp))
                             HeartPulseIcon(bpm = bpm)
                             Spacer(modifier = Modifier.height(10.dp))
@@ -561,7 +680,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            item {
+            //Chart
+            if (activeSession){
+                item {
                 var selectedPeriod by remember { mutableIntStateOf(1) } // 1, 4, 8, 12 hours
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -600,7 +721,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         Spacer(modifier = Modifier.height(10.dp))
-                        
+
                         val maxPointsToKeep = selectedPeriod * 3600
                         val filteredPoints = if (heartRatePoints.size > maxPointsToKeep) {
                             heartRatePoints.takeLast(maxPointsToKeep)
@@ -610,7 +731,7 @@ class MainActivity : ComponentActivity() {
                         val downsampledPoints = remember(filteredPoints.size, selectedPeriod) {
                             downsample(filteredPoints, maxTargetSize = 300, totalPossiblePoints = maxPointsToKeep)
                         }
-                        
+
                         RealTimeChart(
                             points = downsampledPoints,
                             minVal = 50,
@@ -622,6 +743,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -656,11 +778,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun HistoryScreen(
-        sessions: List<WorkoutSession>,
-        onDelete: (WorkoutSession) -> Unit,
-        onDeleteMultiple: (Set<Int>) -> Unit,
-        onShare: (WorkoutSession) -> Unit,
-        currentSessionId: Int?
+        crises: List<com.example.uggiu.data.CrisisRecord>,
+        onDelete: (com.example.uggiu.data.CrisisRecord) -> Unit,
+        onDeleteMultiple: (Set<Int>) -> Unit
     ) {
         var selectedIds by remember { mutableStateOf(setOf<Int>()) }
 
@@ -685,24 +805,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (sessions.isEmpty()) {
+            if (crises.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    Text(text = "Nessuna sessione salvata.", color = Color.Gray, fontSize = 16.sp)
+                    Text(text = "Nessuna crisi registrata.", color = Color.Gray, fontSize = 16.sp)
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    items(sessions) { session ->
-                        val isSelected = session.id in selectedIds
-                        val isActive = session.id == currentSessionId
-                        SessionHistoryCard(
-                            session = session,
+                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(crises) { crisis ->
+                        val isSelected = crisis.id in selectedIds
+                        CrisisHistoryCard(
+                            crisis = crisis,
                             isSelected = isSelected,
-                            isActive = isActive,
                             onToggleSelection = {
-                                selectedIds = if (isSelected) selectedIds - session.id else selectedIds + session.id
+                                selectedIds = if (isSelected) selectedIds - crisis.id else selectedIds + crisis.id
                             },
-                            onDelete = { onDelete(session) },
-                            onShare = { onShare(session) }
+                            onDelete = { onDelete(crisis) }
                         )
                     }
                 }
@@ -711,133 +828,75 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun SessionHistoryCard(
-        session: WorkoutSession,
+    fun CrisisHistoryCard(
+        crisis: com.example.uggiu.data.CrisisRecord,
         isSelected: Boolean,
-        isActive: Boolean,
         onToggleSelection: () -> Unit,
-        onDelete: () -> Unit,
-        onShare: () -> Unit
+        onDelete: () -> Unit
     ) {
-        var expanded by remember { mutableStateOf(false) }
-        val dateString = SimpleDateFormat("EEEE, dd MMM yyyy - HH:mm", Locale.getDefault()).format(Date(session.startTime))
-        val durationText = "${((session.endTime - session.startTime) / 1000) / 60}m ${((session.endTime - session.startTime) / 1000) % 60}s"
+        val startTime = Date(crisis.startTime)
+        val dateString = SimpleDateFormat("EEEE, dd MMM - HH:mm:ss", Locale.getDefault()).format(startTime)
+        val duration = if (crisis.endTime != null) (crisis.endTime - crisis.startTime) / 1000 else 0L
 
         Card(
             modifier = Modifier.fillMaxWidth().clickable { onToggleSelection() },
             colors = CardDefaults.cardColors(containerColor = if (isSelected) Color(0xFF2C2C35) else Color(0xFF141418)),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Box {
-                if (isActive) Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(Color(0xFF00E5FF)))
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = isSelected,
-                                onCheckedChange = { onToggleSelection() },
-                                colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E5FF), uncheckedColor = Color.Gray)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = dateString, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                                    if (isActive) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Box(modifier = Modifier.background(Color(0xFF00E5FF), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                            Text("ATTIVA", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                                Text(text = "Durata: $durationText", fontSize = 12.sp, color = Color.LightGray)
-                            }
-                        }
-                        Text(text = "${session.averageHeartRate} BPM", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E5FF))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        modifier = Modifier.align(Alignment.End).clickable { expanded = !expanded },
-                        text = if (expanded) "Nascondi dettagli ▲" else "Mostra dettagli ▼",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                    if (expanded) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color(0xFF2C2C35))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Massimo: ${session.maxHeartRate}", fontSize = 13.sp, color = Color.White)
-                            Text("Minimo: ${session.getHeartRateHistory().minOrNull() ?: 0}", fontSize = 13.sp, color = Color.White)
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        var selectedPeriod by remember { mutableIntStateOf(1) } // 1, 4, 8, 12 hours
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Andamento Grafico Sessione:",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.LightGray
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                listOf(1, 4, 8, 12).forEach { hours ->
-                                    val isSelectedPeriod = selectedPeriod == hours
-                                    Text(
-                                        text = "${hours}h",
-                                        color = if (isSelectedPeriod) Color(0xFF00E5FF) else Color.Gray,
-                                        fontWeight = if (isSelectedPeriod) FontWeight.Bold else FontWeight.Normal,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(if (isSelectedPeriod) Color(0xFF1F2E35) else Color.Transparent)
-                                            .clickable { selectedPeriod = hours }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        val historyPoints = remember(session) { session.getHeartRateHistory() }
-                        val maxPointsToKeep = selectedPeriod * 3600
-                        val filteredPoints = if (historyPoints.size > maxPointsToKeep) {
-                            historyPoints.takeLast(maxPointsToKeep)
-                        } else {
-                            historyPoints
-                        }
-                        val downsampledPoints = remember(filteredPoints.size, selectedPeriod) {
-                            downsample(filteredPoints, maxTargetSize = 300, totalPossiblePoints = maxPointsToKeep)
-                        }
-                        
-                        RealTimeChart(
-                            points = downsampledPoints,
-                            minVal = 50,
-                            maxVal = 170,
-                            lineColor = Color(0xFF00E5FF),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(100.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(onClick = onShare, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F1F24)), shape = RoundedCornerShape(8.dp)) {
-                                Text("CSV", color = Color.White)
-                            }
-                            Button(onClick = onDelete, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3D00)), shape = RoundedCornerShape(8.dp)) {
-                                Text("Elimina", color = Color.White)
-                            }
-                        }
-                    }
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection() },
+                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E5FF), uncheckedColor = Color.Gray)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = dateString, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                    Text(text = "Durata: ${duration}s | Max BPM: ${crisis.maxBpm}", fontSize = 12.sp, color = Color.LightGray)
                 }
+                IconButton(onClick = onDelete) {
+                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Elimina", tint = Color(0xFFFF3D00))
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun CrisisItem(crisis: com.example.uggiu.service.CrisisEntry) {
+        val isRunning = crisis.endTime == null
+        val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        val startTimeStr = timeFormatter.format(Date.from(crisis.startTime))
+        
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isRunning) Color(0xFF2C1010) else Color(0xFF1F1F24)
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Inizio: $startTimeStr", color = Color.LightGray, fontSize = 12.sp)
+                    Text(
+                        text = if (isRunning) "CRISI IN CORSO" else "Crisi Terminata",
+                        color = if (isRunning) Color(0xFFFF3D00) else Color.Gray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Text(
+                    text = "${crisis.durationSeconds}s",
+                    color = if (isRunning) Color(0xFFFF3D00) else Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -845,7 +904,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun HeartPulseIcon(bpm: Int) {
         val infiniteTransition = rememberInfiniteTransition(label = "heartPulse")
+        
+        // Dynamic duration based on actual heart rate
         val durationMs = if (bpm > 0) (60000 / bpm) else 1000
+        
         val scale by infiniteTransition.animateFloat(
             initialValue = 0.9f,
             targetValue = 1.15f,
@@ -855,44 +917,97 @@ class MainActivity : ComponentActivity() {
             ),
             label = "heartScale"
         )
-        Box(modifier = Modifier.size(70.dp).background(Color(0xFF2C1010), RoundedCornerShape(35.dp)), contentAlignment = Alignment.Center) {
+
+        Box(
+            modifier = Modifier
+                .size(70.dp)
+                .background(Color(0xFF2C1010), RoundedCornerShape(35.dp)),
+            contentAlignment = Alignment.Center
+        ) {
             Canvas(modifier = Modifier.size(36.dp * scale)) {
                 val path = Path().apply {
+                    // SVG Heart Draw Formula
                     moveTo(size.width / 2f, size.height * 0.25f)
-                    cubicTo(size.width * 0.15f, size.height * 0.05f, 0f, size.height * 0.4f, size.width / 2f, size.height * 0.9f)
-                    cubicTo(size.width, size.height * 0.4f, size.width * 0.85f, size.height * 0.05f, size.width / 2f, size.height * 0.25f)
+                    cubicTo(
+                        size.width * 0.15f, size.height * 0.05f,
+                        0f, size.height * 0.4f,
+                        size.width / 2f, size.height * 0.9f
+                    )
+                    cubicTo(
+                        size.width, size.height * 0.4f,
+                        size.width * 0.85f, size.height * 0.05f,
+                        size.width / 2f, size.height * 0.25f
+                    )
                 }
-                drawPath(path = path, color = if (bpm > 140) Color(0xFFFF3D00) else Color(0xFFE91E63))
+                drawPath(
+                    path = path,
+                    color = if (bpm > 140) Color(0xFFFF3D00) else Color(0xFFE91E63)
+                )
             }
         }
     }
 
     @Composable
-    fun RealTimeChart(points: List<Int>, minVal: Int, maxVal: Int, lineColor: Color, modifier: Modifier = Modifier) {
+    fun RealTimeChart(
+        points: List<Int>,
+        minVal: Int,
+        maxVal: Int,
+        lineColor: Color,
+        modifier: Modifier = Modifier
+    ) {
         Canvas(modifier = modifier.clip(RoundedCornerShape(8.dp))) {
             val width = size.width
             val height = size.height
             val paddingLeft = 35.dp.toPx()
             val graphWidth = width - paddingLeft
+            
+            // Draw background grid lines and Y labels
             val gridLines = 4
             val range = (maxVal - minVal).toFloat()
+            
             for (i in 0..gridLines) {
                 val fraction = i.toFloat() / gridLines
                 val y = height * (1f - fraction)
-                drawLine(color = Color(0xFF24242B), start = Offset(paddingLeft, y), end = Offset(width, y), strokeWidth = 1.dp.toPx())
+                
+                // Grid line
+                drawLine(
+                    color = Color(0xFF24242B),
+                    start = Offset(paddingLeft, y),
+                    end = Offset(width, y),
+                    strokeWidth = 1.dp.toPx()
+                )
+                
+                // BPM Label
                 val bpmLabel = (minVal + (fraction * range)).toInt().toString()
-                drawContext.canvas.nativeCanvas.drawText(bpmLabel, 5.dp.toPx(), y - 5.dp.toPx(), Paint().apply { color = android.graphics.Color.LTGRAY; textSize = 10.sp.toPx(); isAntiAlias = true })
+                drawContext.canvas.nativeCanvas.drawText(
+                    bpmLabel,
+                    5.dp.toPx(),
+                    y - 5.dp.toPx(),
+                    Paint().apply {
+                        color = android.graphics.Color.LTGRAY
+                        textSize = 10.sp.toPx()
+                        isAntiAlias = true
+                    }
+                )
             }
+
             if (points.size < 2) return@Canvas
+
+            // Use all points provided (they are already filtered/downsampled externally)
+            // We scale X based on a fixed capacity of 300 points for a consistent look
             val dataList = points
             val maxPointsCapacity = 300
             val xStep = graphWidth / (maxPointsCapacity - 1)
+
             val path = Path()
             val fillPath = Path()
+
             dataList.forEachIndexed { index, value ->
                 val coercedVal = value.coerceIn(minVal, maxVal)
                 val x = paddingLeft + index * xStep
+                // Invert Y coordinate because canvas y-axis goes downwards
                 val y = height - ((coercedVal - minVal) / range * height)
+
                 if (index == 0) {
                     path.moveTo(x, y)
                     fillPath.moveTo(x, height)
@@ -901,50 +1016,78 @@ class MainActivity : ComponentActivity() {
                     path.lineTo(x, y)
                     fillPath.lineTo(x, y)
                 }
+                
                 if (index == dataList.size - 1) {
                     fillPath.lineTo(x, height)
                     fillPath.close()
                 }
             }
-            drawPath(path = fillPath, brush = Brush.verticalGradient(colors = listOf(lineColor.copy(alpha = 0.25f), Color.Transparent), startY = 0f, endY = height))
-            drawPath(path = path, color = lineColor, style = Stroke(width = 2.dp.toPx()))
+
+            // Draw area gradient fill
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(lineColor.copy(alpha = 0.25f), Color.Transparent),
+                    startY = 0f,
+                    endY = height
+                )
+            )
+
+            // Draw line
+            drawPath(
+                path = path,
+                color = lineColor,
+                style = Stroke(width = 2.dp.toPx())
+            )
         }
     }
 
-    fun getBpmZoneText(bpm: Int): String {
+    private fun getBpmZoneText(bpm: Int): String {
         if (bpm == 0) return "Sconosciuto"
-        val age = 30
+        val age = 30 // standard baseline fallback
         val maxHr = 220 - age
         val percentage = (bpm.toFloat() / maxHr) * 100
+
         return when {
             percentage < 50 -> "Riposo"
             percentage < 60 -> "Riscaldamento"
             percentage < 70 -> "Brucia Grassi"
             percentage < 80 -> "Aerobico"
             percentage < 90 -> "Anaerobico"
-            else -> "Pericolo"
+            else -> "Soglia Massima/Pericolo"
         }
     }
 
-    fun getBpmZoneColor(bpm: Int): Color {
+    private fun getBpmZoneColor(bpm: Int): Color {
         if (bpm == 0) return Color.Gray
         val age = 30
         val maxHr = 220 - age
         val percentage = (bpm.toFloat() / maxHr) * 100
+
         return when {
             percentage < 50 -> Color.Gray
             percentage < 60 -> Color(0xFF9E9E9E)
-            percentage < 70 -> Color(0xFF4CAF50)
-            percentage < 80 -> Color(0xFFFFEB3B)
-            percentage < 90 -> Color(0xFFFF9800)
-            else -> Color(0xFFFF3D00)
+            percentage < 70 -> Color(0xFF4CAF50) // Green
+            percentage < 80 -> Color(0xFFFFEB3B) // Yellow
+            percentage < 90 -> Color(0xFFFF9800) // Orange
+            else -> Color(0xFFFF3D00) // Neon Red
         }
     }
 
-    fun downsample(points: List<Int>, maxTargetSize: Int = 300, totalPossiblePoints: Int = 300): List<Int> {
-        val effectiveTargetSize = if (points.size >= totalPossiblePoints) maxTargetSize else ((points.size.toFloat() / totalPossiblePoints) * maxTargetSize).toInt().coerceAtLeast(1)
+    private fun downsample(points: List<Int>, maxTargetSize: Int = 300, totalPossiblePoints: Int = 300): List<Int> {
+        val effectiveTargetSize = if (points.size >= totalPossiblePoints) {
+            maxTargetSize
+        } else {
+            ((points.size.toFloat() / totalPossiblePoints) * maxTargetSize).toInt().coerceAtLeast(1)
+        }
+        
         if (points.size <= effectiveTargetSize) return points
         val step = points.size.toFloat() / effectiveTargetSize
-        return List(effectiveTargetSize) { i -> points[(i * step).toInt().coerceIn(0, points.lastIndex)] }
+        val result = ArrayList<Int>(effectiveTargetSize)
+        for (i in 0 until effectiveTargetSize) {
+            val index = (i * step).toInt().coerceIn(0, points.lastIndex)
+            result.add(points[index])
+        }
+        return result
     }
 }

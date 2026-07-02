@@ -1,49 +1,49 @@
-# uggiu - Heart Rate Monitor
+# uggiu - Heart Rate & Crisis Monitor
 
-**uggiu** è un'applicazione Android moderna progettata per il monitoraggio della frequenza cardiaca in tempo reale utilizzando smartband Bluetooth Low Energy (BLE).
+**uggiu** è un'applicazione Android specializzata nel monitoraggio della frequenza cardiaca in tempo reale e nella rilevazione automatica di situazioni critiche utilizzando smartband Bluetooth Low Energy (BLE).
 
 ## 🚀 Funzionalità Principali
 
-*   **Monitoraggio Real-time**: Visualizzazione istantanea dei battiti per minuto (BPM) con un'icona del cuore animata che segue il ritmo cardiaco.
-*   **Grafico Dinamico**: Visualizzazione dell'andamento cardio con scale temporali selezionabili (1h, 4h, 8h, 12h).
-*   **Sistema di Allarme Personalizzabile**:
-    *   Imposta una soglia massima di BPM (es. 120).
-    *   Imposta una durata minima (es. 10 secondi) sopra la soglia prima che l'allarme scatti.
-    *   Scegli tra allarme sonoro o notifica con vibrazione.
-*   **Cronologia Sessioni**: Salvataggio automatico di ogni allenamento nel database locale (Room).
-*   **Auto-Save**: Salvataggio dei dati ogni 30 secondi per prevenire la perdita di informazioni in caso di chiusura improvvisa.
-*   **Esportazione Dati**: Possibilità di esportare ogni sessione in formato CSV per analisi esterne.
-*   **Supporto Background**: Grazie a un *Foreground Service*, l'app continua a monitorare il battito e gli allarmi anche se lo schermo è spento o l'app è in background.
-*   **Riconnessione Automatica**: Se il segnale Bluetooth viene perso durante una sessione, l'app tenta automaticamente il ripristino del collegamento.
-*   **Badge Batteria**: Visualizzazione del livello di carica della band direttamente nella dashboard (se supportato dal dispositivo).
+*   **Discovery Automatica (Zero-Click)**: L'app avvia la ricerca dei dispositivi appena viene aperta o torna in primo piano. Basta selezionare la propria band dalla lista per iniziare.
+*   **Monitoraggio Crisi Avanzato**:
+    *   **Rilevazione Intelligente**: La crisi viene registrata solo se il battito supera la soglia (X) per una durata minima (Y).
+    *   **Contatore Real-time**: Un cronometro in tempo reale mostra la durata della crisi attiva, includendo retroattivamente il tempo di osservazione iniziale.
+    *   **Notifiche e Allarmi**: Feedback sonoro o vibrazione persistente durante gli eventi critici, anche in background.
+*   **Grafico Dinamico (Sliding Window)**: Visualizzazione dell'andamento cardio con scale temporali (1h, 4h, 8h, 12h) che scorrono mantenendo la proporzione temporale corretta.
+*   **Cronologia degli Eventi**: Database locale dedicato alla registrazione delle singole crisi (inizio, fine, durata e picco BPM).
+*   **Diagnostica Dispositivo**: 
+    *   Visualizzazione Nome e MAC Address del sensore connesso.
+    *   Badge Batteria e Indicatore di Prossimità (RSSI) per monitorare la qualità del segnale.
+    *   Riconnessione Automatica intelligente in caso di perdita segnale.
+*   **Rilevamento Contatto**: Gestione avanzata dell'assenza di segnale (band non indossata) tramite flag BLE ufficiali per evitare "battiti fantasma".
 
 ## 🛠 Tech Stack
 
-*   **Linguaggio**: Kotlin
-*   **UI**: Jetpack Compose (Material 3)
-*   **Database**: Room (per la persistenza delle sessioni)
-*   **Networking**: Bluetooth Low Energy (BLE) API
-*   **Architettura**: MVVM pattern con utilizzo di Foreground Services per il monitoraggio continuo.
+*   **Linguaggio**: Kotlin 2.x
+*   **UI**: Jetpack Compose (Material 3) con architettura reattiva.
+*   **Database**: Room con supporto KSP (Tabella `CrisisRecord` per la cronologia).
+*   **Networking**: Android Bluetooth LE API (Standard GATT Heart Rate Service).
+*   **Background**: Foreground Service con notifica persistente per monitoraggio H24.
 
-## 📦 Installazione e Configurazione
+## 📦 Installazione e Distribuzione
+
+### Generazione APK
+È possibile generare l'eseguibile aggiornato direttamente tramite Gradle utilizzando il task personalizzato:
+```bash
+./gradlew generateUggiuApk
+```
+L'APK sarà disponibile in: `apk/uggiu.apk`
 
 ### Requisiti
-*   Dispositivo Android con versione 8.0 (API 26) o superiore.
-*   Permessi necessari: Bluetooth, Posizione (per scansione BLE), Sensori del corpo e Notifiche.
-
-### Configurazione Smartband
-Per far sì che l'app rilevi la tua band:
-1.  Sulla band, vai in **Impostazioni > Condividi FC** (o *Heart Rate Broadcast*).
-2.  Attiva l'opzione di trasmissione.
-3.  Assicurati che il Bluetooth del telefono sia attivo.
-4.  Apri **uggiu** e premi **AVVIA**.
+*   Android 8.0 (API 26) o superiore.
+*   Permessi: Bluetooth (Scan/Connect), Sensori del corpo, Notifiche.
 
 ## 📂 Struttura del Progetto
 
-*   `MainActivity.kt`: Punto di ingresso dell'interfaccia utente e gestione della UI state.
-*   `service/WorkoutService.kt`: Gestisce la logica di business in background e le notifiche di sistema.
-*   `ble/BLEHeartRateClient.kt`: Gestore della comunicazione Bluetooth e parsing dei dati GATT.
-*   `data/`: Definizione del database Room, DAO e dell'entità `WorkoutSession`.
+*   `MainActivity.kt`: Dashboard interattiva, gestione permessi e navigazione cronologia.
+*   `service/WorkoutService.kt`: Core engine per la registrazione dati e logica degli allarmi.
+*   `ble/BLEHeartRateClient.kt`: Gestore GATT a basso livello con parsing dei pacchetti e gestione RSSI.
+*   `data/`: Persistenza dati con Room (`CrisisRecord` e `WorkoutSession`).
 
 ## 📄 Licenza
 

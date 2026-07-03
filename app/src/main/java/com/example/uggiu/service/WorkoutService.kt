@@ -19,6 +19,7 @@ import android.os.VibratorManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.example.uggiu.MainActivity
+import com.example.uggiu.R
 import com.example.uggiu.ble.BLEHeartRateClient
 import com.example.uggiu.data.CrisisRecord
 import com.example.uggiu.data.SessionDatabase
@@ -144,7 +145,7 @@ class WorkoutService : Service() {
             },
             onStatusUpdated = { status ->
                 _bleStatus.value = status
-                _isConnected.value = (status == "Connesso") || status.contains("Cardio Connesso") || status.contains("Ricezione dati")
+                _isConnected.value = (status == getString(R.string.ble_status_connected))
                 _isScanning.value = bleClient.isScanning
                 updateNotification(_currentBpm.value)
             },
@@ -395,14 +396,14 @@ class WorkoutService : Service() {
             vibrator.vibrate(VibrationEffect.createOneShot(1000, VibrationEffect.DEFAULT_AMPLITUDE))
         }
         serviceScope.launch(Dispatchers.Main) {
-            Toast.makeText(this@WorkoutService, "ATTENZIONE! Battito elevato: $bpm BPM", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@WorkoutService, getString(R.string.alarm_toast, bpm), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Registrazione Allenamento",
+            getString(R.string.notif_channel_name),
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(NotificationManager::class.java)
@@ -415,19 +416,19 @@ class WorkoutService : Service() {
 
         val isActive = _isSessionActive.value
         val battery = _batteryLevel.value
-        val title = if (isActive) "uggiu - Sessione Attiva" else "uggiu - Pronto"
+        val title = if (isActive) getString(R.string.notif_title_active) else getString(R.string.notif_title_ready)
         
-        val batteryText = if (battery >= 0) " (Batteria: $battery%)" else ""
+        val batteryText = if (battery >= 0) getString(R.string.notif_battery, battery) else ""
         val content = when {
-            isActive && bpm > 0 -> "Registrazione in corso: $bpm BPM$batteryText"
-            isActive -> "Registrazione avviata. In attesa di dati...$batteryText"
-            else -> "App in esecuzione. Premi AVVIA per iniziare."
+            isActive && bpm > 0 -> getString(R.string.notif_content_bpm, bpm, batteryText)
+            isActive -> getString(R.string.notif_content_waiting, batteryText)
+            else -> getString(R.string.notif_content_ready)
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
-            .setSmallIcon(com.example.uggiu.R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)

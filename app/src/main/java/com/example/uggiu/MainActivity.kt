@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -82,6 +84,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -180,7 +183,7 @@ class MainActivity : ComponentActivity() {
             if (permissions.values.all { it }) {
                 currentService?.startScan()
             } else {
-                Toast.makeText(context, "Permessi necessari non concessi.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.permissions_denied), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -271,7 +274,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     IconButton(onClick = { showHelpDialog = true }) {
-                        Icon(imageVector = Icons.Default.Info, contentDescription = "Help", tint = Color.Gray)
+                        Icon(imageVector = Icons.Default.Info, contentDescription = stringResource(R.string.help_title), tint = Color.Gray)
                     }
 
                     if (isConnected && rssi < 0) {
@@ -292,7 +295,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Cronologia",
+                            contentDescription = stringResource(R.string.scan_found_title),
                             tint = if (showHistoryScreen) Color.Black else Color.White
                         )
                     }
@@ -344,18 +347,18 @@ class MainActivity : ComponentActivity() {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = onDismiss,
             containerColor = Color(0xFF141418),
-            title = { Text("Guida e Risoluzione Problemi", color = Color(0xFF00E5FF), fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.help_title), color = Color(0xFF00E5FF), fontSize = 18.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HelpItem("Band non connessa?", "Verifica che sulla band sia attivo 'Condividi FC' (Settings > Heart Rate Broadcast). Assicurati che il Bluetooth sia attivo.")
-                    HelpItem("Batteria non visibile?", "Non tutte le band supportano la lettura della batteria via Bluetooth standard. Se disponibile, apparirà automaticamente dopo la connessione.")
-                    HelpItem("Permessi", "Assicurati di aver concesso i permessi Bluetooth, Posizione e Sensori del corpo nelle impostazioni dello smartphone.")
-                    HelpItem("Background", "Per evitare disconnessioni, imposta l'app 'uggiu' come 'Senza restrizioni' nelle impostazioni batteria dello smartphone.")
+                    HelpItem(stringResource(R.string.help_band_not_connected_title), stringResource(R.string.help_band_not_connected_desc))
+                    HelpItem(stringResource(R.string.help_battery_not_visible_title), stringResource(R.string.help_battery_not_visible_desc))
+                    HelpItem(stringResource(R.string.help_permissions_title), stringResource(R.string.help_permissions_desc))
+                    HelpItem(stringResource(R.string.help_background_title), stringResource(R.string.help_background_desc))
                 }
             },
             confirmButton = {
                 Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F1F24))) {
-                    Text("Ho capito", color = Color.White)
+                    Text(stringResource(R.string.help_confirm), color = Color.White)
                 }
             }
         )
@@ -372,10 +375,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun ProximityBadge(rssi: Int) {
         val label = when {
-            rssi > -60 -> "Immediata"
-            rssi > -75 -> "Vicino"
-            rssi > -90 -> "Medio"
-            else -> "Lontano"
+            rssi > -60 -> stringResource(R.string.rssi_immediate)
+            rssi > -75 -> stringResource(R.string.rssi_near)
+            rssi > -90 -> stringResource(R.string.rssi_medium)
+            else -> stringResource(R.string.rssi_far)
         }
         val color = when {
             rssi > -75 -> Color(0xFF4CAF50)
@@ -474,7 +477,7 @@ class MainActivity : ComponentActivity() {
             if (!activeSession && discoveredDevices.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Dispositivi Trovati (Seleziona per connettere):",
+                        text = stringResource(R.string.scan_found_title),
                         color = Color.Gray,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 8.dp)
@@ -497,7 +500,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column {
                                 @SuppressLint("MissingPermission")
-                                val deviceName = device.name ?: "Dispositivo Sconosciuto"
+                                val deviceName = device.name ?: stringResource(R.string.unknown_device)
                                 Text(
                                     text = deviceName,
                                     color = Color.White,
@@ -511,7 +514,7 @@ class MainActivity : ComponentActivity() {
                             }
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.List, // Reusing list icon for "select"
-                                contentDescription = "Select",
+                                contentDescription = stringResource(R.string.btn_terminate),
                                 tint = Color(0xFF00E5FF)
                             )
                         }
@@ -528,11 +531,11 @@ class MainActivity : ComponentActivity() {
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(text = "Configurazione Allarme", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(text = stringResource(R.string.settings_alarm_config), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             Spacer(modifier = Modifier.height(16.dp))
                             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Soglia Battiti (X)", color = Color.Gray, fontSize = 12.sp)
+                                    Text(stringResource(R.string.settings_bpm_threshold), color = Color.Gray, fontSize = 12.sp)
                                     OutlinedTextField(
                                         value = alarmBpmThreshold.value.toString(),
                                         onValueChange = { alarmBpmThreshold.value = it.toIntOrNull() ?: 0 },
@@ -548,7 +551,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Durata (Y sec)", color = Color.Gray, fontSize = 12.sp)
+                                    Text(stringResource(R.string.settings_duration), color = Color.Gray, fontSize = 12.sp)
                                     OutlinedTextField(
                                         value = alarmDurationSeconds.value.toString(),
                                         onValueChange = { alarmDurationSeconds.value = it.toIntOrNull() ?: 0 },
@@ -570,7 +573,7 @@ class MainActivity : ComponentActivity() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isAlarmSoundEnabled.value) "Allarme: SUONO" else "Allarme: NOTIFICA/VIBRA",
+                                    text = if (isAlarmSoundEnabled.value) stringResource(R.string.settings_alarm_sound) else stringResource(R.string.settings_alarm_notify),
                                     color = Color.White,
                                     fontSize = 14.sp
                                 )
@@ -609,7 +612,7 @@ class MainActivity : ComponentActivity() {
                             }
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            val buttonText = if (isConnected) "STOP" else "EXIT"
+                            val buttonText = if (isConnected) stringResource(R.string.btn_terminate) else stringResource(R.string.btn_cancel)
 
                             Button(
                                 onClick = onFinishSession,
@@ -634,7 +637,7 @@ class MainActivity : ComponentActivity() {
             if (activeSession && crises.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Rilevazioni Crisi (BPM > ${alarmBpmThreshold.value})",
+                        text = stringResource(R.string.crisis_detection_title, alarmBpmThreshold.value),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -659,12 +662,12 @@ class MainActivity : ComponentActivity() {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Text("Heart Rate", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.heart_rate_label), fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(10.dp))
                             HeartPulseIcon(bpm = bpm)
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = if (bpm > 0) "$bpm BPM" else "--",
+                                text = if (bpm > 0) stringResource(R.string.bpm_unit, bpm) else "--",
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (bpm > alarmBpmThreshold.value) Color(0xFFFF3D00) else Color(0xFF00E5FF)
@@ -696,7 +699,7 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Andamento Cardio",
+                                text = stringResource(R.string.chart_title),
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -707,7 +710,7 @@ class MainActivity : ComponentActivity() {
                                 listOf(1, 4, 8, 12).forEach { hours ->
                                     val isSelected = selectedPeriod == hours
                                     Text(
-                                        text = "${hours}h",
+                                        text = stringResource(R.string.chart_hours, hours),
                                         color = if (isSelected) Color(0xFF00E5FF) else Color.Gray,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                         modifier = Modifier
@@ -769,9 +772,9 @@ class MainActivity : ComponentActivity() {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Esporta dati sessione"))
+            startActivity(Intent.createChooser(intent, getString(R.string.csv_export_chooser)))
         } catch (e: Exception) {
-            Toast.makeText(this, "Errore durante l'esportazione CSV", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.csv_export_error), Toast.LENGTH_SHORT).show()
             Log.e(TAG, "CSV Export error", e)
         }
     }
@@ -791,7 +794,7 @@ class MainActivity : ComponentActivity() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "${selectedIds.size} selezionate", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(text = stringResource(R.string.history_selected, selectedIds.size), color = Color.White, fontWeight = FontWeight.Bold)
                     Button(
                         onClick = {
                             onDeleteMultiple(selectedIds)
@@ -800,14 +803,14 @@ class MainActivity : ComponentActivity() {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3D00)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Elimina Selezionate", color = Color.White)
+                        Text(stringResource(R.string.history_delete_selected), color = Color.White)
                     }
                 }
             }
 
             if (crises.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    Text(text = "Nessuna crisi registrata.", color = Color.Gray, fontSize = 16.sp)
+                    Text(text = stringResource(R.string.history_empty), color = Color.Gray, fontSize = 16.sp)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -855,10 +858,10 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = dateString, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                    Text(text = "Durata: ${duration}s | Max BPM: ${crisis.maxBpm}", fontSize = 12.sp, color = Color.LightGray)
+                    Text(text = stringResource(R.string.history_duration, duration, crisis.maxBpm), fontSize = 12.sp, color = Color.LightGray)
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Elimina", tint = Color(0xFFFF3D00))
+                    Icon(imageVector = Icons.Default.Delete, contentDescription = stringResource(R.string.history_delete), tint = Color(0xFFFF3D00))
                 }
             }
         }
@@ -870,33 +873,73 @@ class MainActivity : ComponentActivity() {
         val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val startTimeStr = timeFormatter.format(Date.from(crisis.startTime))
         
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isRunning) Color(0xFF2C1010) else Color(0xFF1F1F24)
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Column {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isRunning) Color(0xFF2C1010) else Color(0xFF1F1F24)
+                ),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Column {
-                    Text("Inizio: $startTimeStr", color = Color.LightGray, fontSize = 12.sp)
+                Row(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(stringResource(R.string.crisis_start, startTimeStr), color = Color.LightGray, fontSize = 12.sp)
+                        Text(
+                            text = if (isRunning) stringResource(R.string.crisis_running) else stringResource(R.string.crisis_finished),
+                            color = if (isRunning) Color(0xFFFF3D00) else Color.Gray,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                     Text(
-                        text = if (isRunning) "CRISI IN CORSO" else "Crisi Terminata",
-                        color = if (isRunning) Color(0xFFFF3D00) else Color.Gray,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        text = "${crisis.durationSeconds}s",
+                        color = if (isRunning) Color(0xFFFF3D00) else Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
-                Text(
-                    text = "${crisis.durationSeconds}s",
-                    color = if (isRunning) Color(0xFFFF3D00) else Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            }
+
+            if (isRunning) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141418)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = stringResource(R.string.safety_position),
+                            color = Color(0xFF00E5FF),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Image(
+                            painter = painterResource(id = R.drawable.correct_position),
+                            contentDescription = stringResource(R.string.safety_position),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.safety_position_desc),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
     }
@@ -1042,19 +1085,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
     private fun getBpmZoneText(bpm: Int): String {
-        if (bpm == 0) return "Sconosciuto"
+        if (bpm == 0) return stringResource(R.string.zone_unknown)
         val age = 30 // standard baseline fallback
         val maxHr = 220 - age
         val percentage = (bpm.toFloat() / maxHr) * 100
 
         return when {
-            percentage < 50 -> "Riposo"
-            percentage < 60 -> "Riscaldamento"
-            percentage < 70 -> "Brucia Grassi"
-            percentage < 80 -> "Aerobico"
-            percentage < 90 -> "Anaerobico"
-            else -> "Soglia Massima/Pericolo"
+            percentage < 50 -> stringResource(R.string.zone_rest)
+            percentage < 60 -> stringResource(R.string.zone_warmup)
+            percentage < 70 -> stringResource(R.string.zone_fat_burn)
+            percentage < 80 -> stringResource(R.string.zone_aerobic)
+            percentage < 90 -> stringResource(R.string.zone_anaerobic)
+            else -> stringResource(R.string.zone_danger)
         }
     }
 

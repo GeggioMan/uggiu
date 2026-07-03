@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
+import com.example.uggiu.R
 import java.util.UUID
 
 @SuppressLint("MissingPermission")
@@ -65,7 +66,7 @@ class BLEHeartRateClient(
         sessionSetupTimer = Runnable {
             if (shouldAutoReconnect && !hasReceivedFirstPacket) {
                 Log.w(TAG, "Timeout inizializzazione sessione (15s). Riconnessione...")
-                onStatusUpdated("Timeout connessione. Riprovo...")
+                onStatusUpdated(context.getString(R.string.ble_status_timeout))
                 close()
                 isCurrentlyConnected = false
                 scheduleReconnection()
@@ -79,7 +80,7 @@ class BLEHeartRateClient(
         heartbeatTimer = Runnable {
             if (shouldAutoReconnect && isCurrentlyConnected) {
                 Log.w(TAG, "Assenza di dati cardio da 10s. Riconnessione...")
-                onStatusUpdated("Nessun dato. Riconnessione...")
+                onStatusUpdated(context.getString(R.string.ble_status_no_data))
                 onHeartRateUpdated(0)
                 close()
                 isCurrentlyConnected = false
@@ -106,7 +107,7 @@ class BLEHeartRateClient(
         reconnectRunnable = Runnable {
             if (shouldAutoReconnect && lastConnectedDevice != null) {
                 Log.i(TAG, "Tentativo di riconnessione automatica...")
-                onStatusUpdated("Riconnessione in corso...")
+                onStatusUpdated(context.getString(R.string.ble_status_reconnecting))
                 close()
                 connectToDevice(lastConnectedDevice!!)
             }
@@ -148,20 +149,20 @@ class BLEHeartRateClient(
 
         override fun onScanFailed(errorCode: Int) {
             Log.e(TAG, "Scansione fallita con codice: $errorCode")
-            onStatusUpdated("Errore di scansione (Codice: $errorCode)")
+            onStatusUpdated(context.getString(R.string.ble_status_scan_error, errorCode))
             stopScan()
         }
     }
 
     fun startScan() {
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-            onStatusUpdated("Bluetooth non attivo")
+            onStatusUpdated(context.getString(R.string.ble_status_bluetooth_off))
             return
         }
 
         if (isScanning) return
 
-        onStatusUpdated("Ricerca Huawei Band...")
+        onStatusUpdated(context.getString(R.string.scan_searching))
         isScanning = true
 
         val filter = ScanFilter.Builder()
@@ -179,7 +180,7 @@ class BLEHeartRateClient(
         scanTimeoutRunnable = Runnable {
             if (isScanning) {
                 stopScan()
-                onStatusUpdated("Nessuna band trovata. Verifica che 'Condividi FC' sia attivo.")
+                onStatusUpdated(context.getString(R.string.ble_status_not_found))
             }
         }
         handler.postDelayed(scanTimeoutRunnable!!, SCAN_PERIOD)
@@ -199,7 +200,7 @@ class BLEHeartRateClient(
 
     fun connectToDevice(device: BluetoothDevice) {
         cancelReconnectionTasks()
-        onStatusUpdated("Start up...")
+        onStatusUpdated(context.getString(R.string.ble_status_initializing))
         lastConnectedDevice = device
         isCurrentlyConnected = false
         hasReceivedFirstPacket = false
@@ -228,7 +229,7 @@ class BLEHeartRateClient(
         stopScan()
         bluetoothGatt?.let { gatt ->
             gatt.disconnect()
-            onStatusUpdated("Disconnesso")
+            onStatusUpdated(context.getString(R.string.ble_status_disconnected))
         }
     }
 
@@ -250,12 +251,12 @@ class BLEHeartRateClient(
                 val deviceName = gatt.device.name ?: "---"
                 val deviceAddress = gatt.device.address
                 handler.post { onDeviceConnected(deviceName, deviceAddress) }
-                onStatusUpdated("Connesso")
+                onStatusUpdated(context.getString(R.string.ble_status_connected))
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnesso dal GATT server. Status: $status")
                 isCurrentlyConnected = false
-                onStatusUpdated("Scollegato")
+                onStatusUpdated(context.getString(R.string.ble_status_disconnected))
                 onHeartRateUpdated(0) // Reset BPM on disconnect
                 close()
                 
@@ -272,7 +273,7 @@ class BLEHeartRateClient(
                 readBatteryLevel(gatt)
             } else {
                 Log.w(TAG, "Scoperta servizi fallita con stato: $status")
-                onStatusUpdated("Errore configurazione servizi ($status)")
+                onStatusUpdated(context.getString(R.string.ble_status_service_error, status))
             }
         }
 
@@ -352,14 +353,14 @@ class BLEHeartRateClient(
         val service = gatt.getService(HEART_RATE_SERVICE_UUID)
         if (service == null) {
             Log.e(TAG, "Servizio frequenza cardiaca non trovato!")
-            onStatusUpdated("Errore: Servizio Cardio non supportato")
+            onStatusUpdated(context.getString(R.string.ble_status_hr_not_supported))
             return
         }
 
         val characteristic = service.getCharacteristic(HEART_RATE_MEASUREMENT_CHAR_UUID)
         if (characteristic == null) {
             Log.e(TAG, "Caratteristica di misura non trovata!")
-            onStatusUpdated("Errore: Lettura Cardio non supportata")
+            onStatusUpdated(context.getString(R.string.ble_status_hr_read_error))
             return
         }
 
@@ -377,10 +378,10 @@ class BLEHeartRateClient(
                 @Suppress("DEPRECATION")
                 gatt.writeDescriptor(descriptor)
             }
-            onStatusUpdated("Connesso")
+            onStatusUpdated(context.getString(R.string.ble_status_connected))
         } else {
             Log.e(TAG, "Descrittore CCCD non trovato!")
-            onStatusUpdated("Errore configurazione notifiche")
+            onStatusUpdated(context.getString(R.string.ble_status_notify_error))
         }
     }
 

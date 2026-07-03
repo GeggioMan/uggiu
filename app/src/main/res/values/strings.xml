@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">uggiu</string>
+    <string name="help_title">Guida e Risoluzione Problemi</string>
+    <string name="help_band_not_connected_title">Band non connessa?</string>
+    <string name="help_band_not_connected_desc">Verifica che sulla band sia attivo \'Condividi FC\' (Settings > Heart Rate Broadcast). Assicurati che il Bluetooth sia attivo.</string>
+    <string name="help_battery_not_visible_title">Batteria non visibile?</string>
+    <string name="help_battery_not_visible_desc">Non tutte le band supportano la lettura della batteria via Bluetooth standard. Se disponibile, apparirà automaticamente dopo la connessione.</string>
+    <string name="help_permissions_title">Permessi</string>
+    <string name="help_permissions_desc">Assicurati di aver concesso i permessi Bluetooth, Posizione e Sensori del corpo nelle impostazioni dello smartphone.</string>
+    <string name="help_background_title">Background</string>
+    <string name="help_background_desc">Per evitare disconnessioni, imposta l\'app \'uggiu\' come \'Senza restrizioni\' nelle impostazioni batteria dello smartphone.</string>
+    <string name="help_confirm">Ho capito</string>
+
+    <string name="rssi_immediate">Immediata</string>
+    <string name="rssi_near">Vicino</string>
+    <string name="rssi_medium">Medio</string>
+    <string name="rssi_far">Lontano</string>
+
+    <string name="scan_searching">Ricerca dispositivi...</string>
+    <string name="scan_completed">Ricerca completata</string>
+    <string name="scan_found_title">Dispositivi Trovati (Seleziona per connettere):</string>
+    <string name="unknown_device">Dispositivo Sconosciuto</string>
+
+    <string name="settings_alarm_config">Configurazione Allarme</string>
+    <string name="settings_bpm_threshold">Soglia Battiti (X)</string>
+    <string name="settings_duration">Durata (Y sec)</string>
+    <string name="settings_alarm_sound">Allarme: SUONO</string>
+    <string name="settings_alarm_notify">Allarme: NOTIFICA/VIBRA</string>
+
+    <string name="session_active">Sessione in Corso</string>
+    <string name="btn_stop">STOP</string>
+    <string name="btn_exit">EXIT</string>
+    <string name="btn_terminate">TERMINA</string>
+    <string name="btn_cancel">ANNULLA</string>
+    <string name="btn_start">AVVIA</string>
+
+    <string name="crisis_detection_title">Rilevazioni Crisi (BPM > %1$d)</string>
+    <string name="crisis_start">Inizio: %1$s</string>
+    <string name="crisis_running">CRISI IN CORSO</string>
+    <string name="crisis_finished">Crisi Terminata</string>
+    <string name="safety_position">POSIZIONE DI SICUREZZA</string>
+    <string name="safety_position_desc">Assumi questa posizione immediatamente</string>
+
+    <string name="heart_rate_label">Heart Rate</string>
+    <string name="bpm_unit">%1$d BPM</string>
+
+    <string name="zone_unknown">Sconosciuto</string>
+    <string name="zone_rest">Riposo</string>
+    <string name="zone_warmup">Riscaldamento</string>
+    <string name="zone_fat_burn">Brucia Grassi</string>
+    <string name="zone_aerobic">Aerobico</string>
+    <string name="zone_anaerobic">Anaerobico</string>
+    <string name="zone_danger">Soglia Massima/Pericolo</string>
+
+    <string name="chart_title">Andamento Cardio</string>
+    <string name="chart_hours">%1$dh</string>
+
+    <string name="history_empty">Nessuna crisi registrata.</string>
+    <string name="history_selected">%1$d selezionate</string>
+    <string name="history_delete_selected">Elimina Selezionate</string>
+    <string name="history_delete">Elimina</string>
+    <string name="history_duration">Durata: %1$ds | Max BPM: %2$d</string>
+
+    <string name="ble_status_disconnected">Scollegato</string>
+    <string name="ble_status_connected">Connesso</string>
+    <string name="ble_status_timeout">Timeout connessione. Riprovo...</string>
+    <string name="ble_status_no_data">Nessun dato. Riconnessione...</string>
+    <string name="ble_status_reconnecting">Riconnessione in corso...</string>
+    <string name="ble_status_initializing">Inizializzazione connessione...</string>
+    <string name="ble_status_service_error">Errore configurazione servizi (%1$d)</string>
+    <string name="ble_status_hr_not_supported">Errore: Servizio Cardio non supportato</string>
+    <string name="ble_status_hr_read_error">Errore: Lettura Cardio non supportata</string>
+    <string name="ble_status_notify_error">Errore configurazione notifiche</string>
+    <string name="ble_status_bluetooth_off">Bluetooth non attivo</string>
+    <string name="ble_status_searching">Ricerca dispositivi...</string>
+    <string name="ble_status_not_found">Nessuna band trovata. Verifica che \'Condividi FC\' sia attivo.</string>
+    <string name="ble_status_scan_error">Errore di scansione (Codice: %1$d)</string>
+
+    <string name="notif_title_active">uggiu - Sessione Attiva</string>
+    <string name="notif_title_ready">uggiu - Pronto</string>
+    <string name="notif_content_bpm">Registrazione in corso: %1$d BPM%2$s</string>
+    <string name="notif_content_waiting">Registrazione avviata. In attesa di dati...%1$s</string>
+    <string name="notif_content_ready">App in esecuzione. Seleziona una band per iniziare.</string>
+    <string name="notif_battery"> (Batteria: %1$d%%)</string>
+
+    <string name="alarm_toast">ATTENZIONE! Battito elevato: %1$d BPM</string>
+    <string name="notif_channel_name">Registrazione Allenamento</string>
+
+    <string name="csv_export_error">Errore durante l\'esportazione CSV</string>
+    <string name="csv_export_chooser">Esporta dati sessione</string>
+    <string name="permissions_denied">Permessi necessari non concessi.</string>
+</resources>

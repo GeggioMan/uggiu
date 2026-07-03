@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">uggiu</string>
+    <string name="help_title">Help &amp; Troubleshooting</string>
+    <string name="help_band_not_connected_title">Band not connected?</string>
+    <string name="help_band_not_connected_desc">Check that \'Share HR\' (Settings > Heart Rate Broadcast) is active on the band. Ensure Bluetooth is on.</string>
+    <string name="help_battery_not_visible_title">Battery not visible?</string>
+    <string name="help_battery_not_visible_desc">Not all bands support battery reading via standard Bluetooth. If available, it will appear automatically after connection.</string>
+    <string name="help_permissions_title">Permissions</string>
+    <string name="help_permissions_desc">Make sure you have granted Bluetooth, Location and Body Sensors permissions in your smartphone settings.</string>
+    <string name="help_background_title">Background</string>
+    <string name="help_background_desc">To avoid disconnections, set the \'uggiu\' app to \'Unrestricted\' in your smartphone\'s battery settings.</string>
+    <string name="help_confirm">Got it</string>
+
+    <string name="rssi_immediate">Immediate</string>
+    <string name="rssi_near">Near</string>
+    <string name="rssi_medium">Medium</string>
+    <string name="rssi_far">Far</string>
+
+    <string name="scan_searching">Searching for devices...</string>
+    <string name="scan_completed">Search completed</string>
+    <string name="scan_found_title">Devices Found (Select to connect):</string>
+    <string name="unknown_device">Unknown Device</string>
+
+    <string name="settings_alarm_config">Alarm Configuration</string>
+    <string name="settings_bpm_threshold">BPM Threshold (X)</string>
+    <string name="settings_duration">Duration (Y sec)</string>
+    <string name="settings_alarm_sound">Alarm: SOUND</string>
+    <string name="settings_alarm_notify">Alarm: NOTIFICATION/VIBRATE</string>
+
+    <string name="session_active">Session in Progress</string>
+    <string name="btn_stop">STOP</string>
+    <string name="btn_exit">EXIT</string>
+    <string name="btn_terminate">STOP</string>
+    <string name="btn_cancel">CANCEL</string>
+    <string name="btn_start">START</string>
+
+    <string name="crisis_detection_title">Crisis Detection (BPM > %1$d)</string>
+    <string name="crisis_start">Start: %1$s</string>
+    <string name="crisis_running">CRISIS IN PROGRESS</string>
+    <string name="crisis_finished">Crisis Finished</string>
+    <string name="safety_position">SAFETY POSITION</string>
+    <string name="safety_position_desc">Assume this position immediately</string>
+
+    <string name="heart_rate_label">Heart Rate</string>
+    <string name="bpm_unit">%1$d BPM</string>
+
+    <string name="zone_unknown">Unknown</string>
+    <string name="zone_rest">Rest</string>
+    <string name="zone_warmup">Warmup</string>
+    <string name="zone_fat_burn">Fat Burn</string>
+    <string name="zone_aerobic">Aerobic</string>
+    <string name="zone_anaerobic">Anaerobic</string>
+    <string name="zone_danger">Max Threshold/Danger</string>
+
+    <string name="chart_title">Heart Rate Trend</string>
+    <string name="chart_hours">%1$dh</string>
+
+    <string name="history_empty">No crises recorded.</string>
+    <string name="history_selected">%1$d selected</string>
+    <string name="history_delete_selected">Delete Selected</string>
+    <string name="history_delete">Delete</string>
+    <string name="history_duration">Duration: %1$ds | Max BPM: %2$d</string>
+
+    <string name="ble_status_disconnected">Disconnected</string>
+    <string name="ble_status_connected">Connected</string>
+    <string name="ble_status_timeout">Connection timeout. Retrying...</string>
+    <string name="ble_status_no_data">No data. Reconnecting...</string>
+    <string name="ble_status_reconnecting">Reconnecting...</string>
+    <string name="ble_status_initializing">Initializing connection...</string>
+    <string name="ble_status_service_error">Service config error (%1$d)</string>
+    <string name="ble_status_hr_not_supported">Error: Heart Rate service not supported</string>
+    <string name="ble_status_hr_read_error">Error: Heart Rate reading not supported</string>
+    <string name="ble_status_notify_error">Notification config error</string>
+    <string name="ble_status_bluetooth_off">Bluetooth disabled</string>
+    <string name="ble_status_searching">Searching for devices...</string>
+    <string name="ble_status_not_found">No band found. Check that \'Share HR\' is active.</string>
+    <string name="ble_status_scan_error">Scan error (Code: %1$d)</string>
+
+    <string name="notif_title_active">uggiu - Active Session</string>
+    <string name="notif_title_ready">uggiu - Ready</string>
+    <string name="notif_content_bpm">Recording in progress: %1$d BPM%2$s</string>
+    <string name="notif_content_waiting">Recording started. Waiting for data...%1$s</string>
+    <string name="notif_content_ready">App running. Select a band to start.</string>
+    <string name="notif_battery"> (Battery: %1$d%%)</string>
+
+    <string name="alarm_toast">WARNING! High heart rate: %1$d BPM</string>
+    <string name="notif_channel_name">Workout Recording</string>
+
+    <string name="csv_export_error">Error during CSV export</string>
+    <string name="csv_export_chooser">Export session data</string>
+    <string name="permissions_denied">Necessary permissions not granted.</string>
+</resources>

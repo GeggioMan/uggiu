@@ -748,6 +748,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             }
+
+
         }
     }
 
@@ -916,29 +918,20 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1B1F)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF121117)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = stringResource(R.string.safety_position),
-                            color = Color(0xFF00E5FF),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Image(
                             painter = painterResource(id = R.drawable.correct_position),
                             contentDescription = stringResource(R.string.safety_position),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(200.dp)
-                                .clip(RoundedCornerShape(16.dp))
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = stringResource(R.string.safety_position_desc),
                             color = Color.White,

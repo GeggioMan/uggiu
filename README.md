@@ -2,6 +2,12 @@
 
 **uggiu** is a modern Android application specialized in real-time heart rate monitoring and automatic detection of critical situations using Bluetooth Low Energy (BLE) smartbands.
 
+## ⚠️ Medical Disclaimer
+
+**uggiu is NOT a medical device.** It has not been cleared or approved by any health authority. This software is provided "as is" and is intended for informational purposes only. It is NOT a substitute for professional medical advice, diagnosis, or treatment.
+
+This project was born from a personal need—monitoring a child with a risk of nocturnal epileptic seizures—and is shared with the hope that it might be useful to others in similar situations. However, always rely on professional medical equipment and advice for life-critical monitoring. The authors assume no liability for the use of this software.
+
 ## 🚀 Key Features
 
 *   **Automatic Discovery (Zero-Click)**: The app starts searching for devices as soon as it's opened or brought to the foreground. Simply select your band from the list to start.
@@ -48,4 +54,4 @@ The APK will be available in: `apk/uggiu.apk`
 
 ## 📄 License
 
-This project is distributed for personal and demonstrative use.
+This project is licensed under the [MIT License](LICENSE).

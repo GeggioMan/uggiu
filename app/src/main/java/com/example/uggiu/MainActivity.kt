@@ -839,7 +839,10 @@ class MainActivity : ComponentActivity() {
     ) {
         val startTime = Date(crisis.startTime)
         val dateString = SimpleDateFormat("EEEE, dd MMM - HH:mm:ss", Locale.getDefault()).format(startTime)
-        val duration = if (crisis.endTime != null) (crisis.endTime - crisis.startTime) / 1000 else 0L
+        val durationSeconds = if (crisis.endTime != null) (crisis.endTime - crisis.startTime) / 1000 else 0L
+        val minutes = durationSeconds / 60
+        val seconds = durationSeconds % 60
+        val durationFormatted = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 
         Card(
             modifier = Modifier.fillMaxWidth().clickable { onToggleSelection() },
@@ -858,7 +861,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = dateString, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                    Text(text = stringResource(R.string.history_duration, duration, crisis.maxBpm), fontSize = 12.sp, color = Color.LightGray)
+                    Text(text = stringResource(R.string.history_duration, durationFormatted, crisis.maxBpm), fontSize = 12.sp, color = Color.LightGray)
                 }
                 IconButton(onClick = onDelete) {
                     Icon(imageVector = Icons.Default.Delete, contentDescription = stringResource(R.string.history_delete), tint = Color(0xFFFF3D00))
@@ -895,8 +898,12 @@ class MainActivity : ComponentActivity() {
                             fontSize = 14.sp
                         )
                     }
+                    val minutes = crisis.durationSeconds / 60
+                    val seconds = crisis.durationSeconds % 60
+                    val durationFormatted = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+                    
                     Text(
-                        text = "${crisis.durationSeconds}s",
+                        text = durationFormatted,
                         color = if (isRunning) Color(0xFFFF3D00) else Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -909,7 +916,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141418)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1B1F)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -929,7 +936,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(200.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(16.dp))
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(

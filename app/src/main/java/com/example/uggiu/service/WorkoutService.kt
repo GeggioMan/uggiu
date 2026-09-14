@@ -5,8 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -80,6 +85,9 @@ class WorkoutService : Service() {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    private val _isBluetoothEnabled = MutableStateFlow(false)
+    val isBluetoothEnabled: StateFlow<Boolean> = _isBluetoothEnabled.asStateFlow()
+
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val discoveredDevices: StateFlow<List<BluetoothDevice>> = _discoveredDevices.asStateFlow()
 
@@ -105,10 +113,21 @@ class WorkoutService : Service() {
         private const val TAG = "WorkoutService"
         private const val CHANNEL_ID = "workout_channel"
         private const val NOTIFICATION_ID = 1
+        const val ACTION_STOP_SERVICE = "com.example.uggiu.action.STOP_SERVICE"
+        const val ACTION_CLOSE_APP = "com.example.uggiu.action.CLOSE_APP"
     }
 
     inner class WorkoutBinder : Binder() {
         fun getService(): WorkoutService = this@WorkoutService
+    }
+
+    private val bluetoothReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == BluetoothAdapter.ACTION_STATE_CHANGED) {
+                val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+                _isBluetoothEnabled.value = (state == BluetoothAdapter.STATE_ON)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -117,6 +136,10 @@ class WorkoutService : Service() {
         super.onCreate()
         db = SessionDatabase.getDatabase(this)
         createNotificationChannel()
+
+        val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        _isBluetoothEnabled.value = adapter?.isEnabled == true
+        registerReceiver(bluetoothReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         
         bleClient = BLEHeartRateClient(
             context = this,
@@ -153,6 +176,11 @@ class WorkoutService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            stopWorkout()
+            return START_NOT_STICKY
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, createNotification(0), ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         } else {
@@ -223,27 +251,32 @@ class WorkoutService : Service() {
     }
 
     fun stopWorkout() {
+        _isSessionActive.value = false
+        
+        // Immediate notification removal
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.cancel(NOTIFICATION_ID)
+
+        // Broadcast to close the Activity
+        sendBroadcast(Intent(ACTION_CLOSE_APP))
+        
         autoSaveJob?.cancel()
         recordingJob?.cancel()
         
         serviceScope.launch {
-            // Close any active crisis before stopping
+            // ... cleanup ...
             if (highHrStartTime != null) {
                 finalizeActiveCrisis()
             }
-
             if (heartRatePoints.isNotEmpty()) {
                 autoSaveSession()
             }
             bleClient.setAutoReconnect(false)
             bleClient.disconnect()
-            
-            _isSessionActive.value = false
+            bleClient.close()
             _currentBpm.value = 0
             currentSessionId = null
-            
-            updateNotification(0)
-            stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
         }
     }
@@ -414,6 +447,13 @@ class WorkoutService : Service() {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
+        val stopIntent = Intent(this, WorkoutService::class.java).apply {
+            action = ACTION_STOP_SERVICE
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+
         val isActive = _isSessionActive.value
         val battery = _batteryLevel.value
         val title = if (isActive) getString(R.string.notif_title_active) else getString(R.string.notif_title_ready)
@@ -432,16 +472,25 @@ class WorkoutService : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                getString(R.string.btn_exit),
+                stopPendingIntent
+            )
             .build()
     }
 
     private fun updateNotification(bpm: Int) {
+        if (!_isSessionActive.value && bpm == 0) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, createNotification(bpm))
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.cancel(NOTIFICATION_ID)
+        unregisterReceiver(bluetoothReceiver)
         bleClient.disconnect()
         bleClient.close()
         serviceScope.launch {

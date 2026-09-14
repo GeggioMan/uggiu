@@ -23,17 +23,24 @@
     <string name="unknown_device">Unknown Device</string>
 
     <string name="settings_alarm_config">Alarm Configuration</string>
-    <string name="settings_bpm_threshold">BPM Threshold (X)</string>
-    <string name="settings_duration">Duration (Y sec)</string>
+    <string name="settings_bpm_threshold">Resting BPM Threshold</string>
+    <string name="settings_duration">Duration (sec)</string>
     <string name="settings_alarm_sound">Alarm: SOUND</string>
     <string name="settings_alarm_notify">Alarm: NOTIFICATION/VIBRATE</string>
 
     <string name="session_active">Session in Progress</string>
     <string name="btn_stop">STOP</string>
-    <string name="btn_exit">EXIT</string>
+    <string name="btn_exit">CLOSE APPLICATION</string>
     <string name="btn_terminate">STOP</string>
     <string name="btn_cancel">CANCEL</string>
     <string name="btn_start">START</string>
+    <string name="btn_select">SELECT</string>
+
+    <string name="alias_dialog_title">Do you want to rename the device?</string>
+    <string name="alias_dialog_desc">Enter a name that\'s easy to recognize for this device (e.g., Diego\'s Band).</string>
+    <string name="alias_label">Device Alias</string>
+    <string name="alias_confirm">Save</string>
+    <string name="alias_skip">Skip</string>
 
     <string name="crisis_detection_title">Crisis Detection (BPM > %1$d)</string>
     <string name="crisis_start">Start: %1$s</string>
@@ -44,14 +51,6 @@
 
     <string name="heart_rate_label">Heart Rate</string>
     <string name="bpm_unit">%1$d BPM</string>
-
-    <string name="zone_unknown">Unknown</string>
-    <string name="zone_rest">Rest</string>
-    <string name="zone_warmup">Warmup</string>
-    <string name="zone_fat_burn">Fat Burn</string>
-    <string name="zone_aerobic">Aerobic</string>
-    <string name="zone_anaerobic">Anaerobic</string>
-    <string name="zone_danger">Max Threshold/Danger</string>
 
     <string name="chart_title">Heart Rate Trend</string>
     <string name="chart_hours">%1$dh</string>
@@ -76,6 +75,8 @@
     <string name="ble_status_searching">Searching for devices...</string>
     <string name="ble_status_not_found">No band found. Check that \'Share HR\' is active.</string>
     <string name="ble_status_scan_error">Scan error (Code: %1$d)</string>
+
+    <string name="warning_bluetooth_off">Bluetooth is off. Please turn it on to scan for devices.</string>
 
     <string name="notif_title_active">uggiu - Active Session</string>
     <string name="notif_title_ready">uggiu - Ready</string>

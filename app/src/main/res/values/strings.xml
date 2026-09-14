@@ -23,17 +23,24 @@
     <string name="unknown_device">Dispositivo Sconosciuto</string>
 
     <string name="settings_alarm_config">Configurazione Allarme</string>
-    <string name="settings_bpm_threshold">Soglia Battiti (X)</string>
-    <string name="settings_duration">Durata (Y sec)</string>
+    <string name="settings_bpm_threshold">Soglia battiti a riposo</string>
+    <string name="settings_duration">Durata (secondi)</string>
     <string name="settings_alarm_sound">Allarme: SUONO</string>
     <string name="settings_alarm_notify">Allarme: NOTIFICA/VIBRA</string>
 
     <string name="session_active">Sessione in Corso</string>
     <string name="btn_stop">STOP</string>
-    <string name="btn_exit">EXIT</string>
+    <string name="btn_exit">CHIUDI APPLICAZIONE</string>
     <string name="btn_terminate">TERMINA</string>
     <string name="btn_cancel">ANNULLA</string>
     <string name="btn_start">AVVIA</string>
+    <string name="btn_select">SELEZIONA</string>
+
+    <string name="alias_dialog_title">Vuoi rinominare il dispositivo?</string>
+    <string name="alias_dialog_desc">Inserisci un nome facile da riconoscere per questo dispositivo (es. Band di Diego).</string>
+    <string name="alias_label">Alias dispositivo</string>
+    <string name="alias_confirm">Salva</string>
+    <string name="alias_skip">Ignora</string>
 
     <string name="crisis_detection_title">Rilevazioni Crisi (BPM > %1$d)</string>
     <string name="crisis_start">Inizio: %1$s</string>
@@ -44,14 +51,6 @@
 
     <string name="heart_rate_label">Heart Rate</string>
     <string name="bpm_unit">%1$d BPM</string>
-
-    <string name="zone_unknown">Sconosciuto</string>
-    <string name="zone_rest">Riposo</string>
-    <string name="zone_warmup">Riscaldamento</string>
-    <string name="zone_fat_burn">Brucia Grassi</string>
-    <string name="zone_aerobic">Aerobico</string>
-    <string name="zone_anaerobic">Anaerobico</string>
-    <string name="zone_danger">Soglia Massima/Pericolo</string>
 
     <string name="chart_title">Andamento Cardio</string>
     <string name="chart_hours">%1$dh</string>
@@ -76,6 +75,8 @@
     <string name="ble_status_searching">Ricerca dispositivi...</string>
     <string name="ble_status_not_found">Nessuna band trovata. Verifica che \'Condividi FC\' sia attivo.</string>
     <string name="ble_status_scan_error">Errore di scansione (Codice: %1$d)</string>
+
+    <string name="warning_bluetooth_off">Il Bluetooth è spento. Attivalo per cercare i dispositivi.</string>
 
     <string name="notif_title_active">uggiu - Sessione Attiva</string>
     <string name="notif_title_ready">uggiu - Pronto</string>

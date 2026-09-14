@@ -2,8 +2,12 @@ package com.example.uggiu
 
 import android.annotation.SuppressLint
 import android.Manifest
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.graphics.Paint
@@ -22,6 +26,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +53,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -95,6 +101,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import com.example.uggiu.data.SessionDatabase
 import com.example.uggiu.data.WorkoutSession
+import com.example.uggiu.data.DeviceAlias
+import com.example.uggiu.service.CrisisEntry
 import com.example.uggiu.service.WorkoutService
 import kotlinx.coroutines.launch
 import java.io.File
@@ -125,6 +133,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val closeAppReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == WorkoutService.ACTION_CLOSE_APP) {
+                finish()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         db = SessionDatabase.getDatabase(this)
@@ -132,6 +148,9 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, WorkoutService::class.java)
         startService(intent)
         bindService(intent, serviceConnection, BIND_AUTO_CREATE)
+
+        val filter = IntentFilter(WorkoutService.ACTION_CLOSE_APP)
+        ContextCompat.registerReceiver(this, closeAppReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         setContent {
             MaterialTheme(
@@ -150,6 +169,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterReceiver(closeAppReceiver)
         if (isBound) {
             unbindService(serviceConnection)
             isBound = false
@@ -163,6 +183,7 @@ class MainActivity : ComponentActivity() {
         var showHelpDialog by remember { mutableStateOf(false) }
         val sessions by db.sessionDao().getAllSessions().collectAsState(initial = emptyList())
         val crisesHistory by db.sessionDao().getAllCrises().collectAsState(initial = emptyList())
+        val deviceAliases by db.sessionDao().getAllAliases().collectAsState(initial = emptyList())
 
         // Service States
         val currentService = workoutService
@@ -176,6 +197,7 @@ class MainActivity : ComponentActivity() {
         val isScanning by currentService?.isScanning?.collectAsState(initial = false) ?: remember { mutableStateOf(false) }
         val discoveredDevices by currentService?.discoveredDevices?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
         val crises by currentService?.crises?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
+        val isBluetoothEnabled by currentService?.isBluetoothEnabled?.collectAsState(initial = true) ?: remember { mutableStateOf(true) }
 
         val requestPermissionsLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -306,6 +328,31 @@ class MainActivity : ComponentActivity() {
                 HelpDialog(onDismiss = { showHelpDialog = false })
             }
 
+            var deviceToAlias by remember { mutableStateOf<BluetoothDevice?>(null) }
+            if (deviceToAlias != null) {
+                AliasDialog(
+                    device = deviceToAlias!!,
+                    onDismiss = { deviceToAlias = null },
+                    onConfirm = { device, alias ->
+                        lifecycleScope.launch {
+                            db.sessionDao().insertAlias(DeviceAlias(device.address, alias))
+                            workoutService?.connectToDevice(device)
+                            workoutService?.startWorkout()
+                            deviceToAlias = null
+                        }
+                    },
+                    onSkip = { device ->
+                        workoutService?.connectToDevice(device)
+                        workoutService?.startWorkout()
+                        deviceToAlias = null
+                    }
+                )
+            }
+
+            if (!isBluetoothEnabled) {
+                BluetoothWarningBanner()
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             if (showHistoryScreen) {
@@ -329,17 +376,69 @@ class MainActivity : ComponentActivity() {
                     bpm = currentBpm,
                     onFinishSession = { workoutService?.stopWorkout() },
                     onSelectDevice = { device ->
-                        workoutService?.connectToDevice(device)
-                        workoutService?.startWorkout()
+                        // Check if it already has an alias
+                        val hasAlias = deviceAliases.any { it.address == device.address }
+                        if (hasAlias) {
+                            workoutService?.connectToDevice(device)
+                            workoutService?.startWorkout()
+                        } else {
+                            deviceToAlias = device
+                        }
                     },
                     alarmBpmThreshold = alarmBpmThreshold,
                     alarmDurationSeconds = alarmDurationSeconds,
                     isAlarmSoundEnabled = isAlarmSoundEnabled,
                     heartRatePoints = workoutService?.heartRatePoints ?: emptyList(),
-                    crises = crises.take(1) // Only show the last one of the current session
+                    crises = crises.take(1), // Only show the last one of the current session
+                    deviceAliases = deviceAliases
                 )
             }
         }
+    }
+
+    @Composable
+    fun AliasDialog(
+        device: BluetoothDevice,
+        onDismiss: () -> Unit,
+        onConfirm: (BluetoothDevice, String) -> Unit,
+        onSkip: (BluetoothDevice) -> Unit
+    ) {
+        var alias by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = Color(0xFF141418),
+            title = { Text(stringResource(R.string.alias_dialog_title), color = Color(0xFF00E5FF), fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.alias_dialog_desc), color = Color.Gray, fontSize = 14.sp)
+                    OutlinedTextField(
+                        value = alias,
+                        onValueChange = { alias = it },
+                        label = { Text(stringResource(R.string.alias_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00E5FF),
+                            unfocusedBorderColor = Color.DarkGray
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { if (alias.isNotBlank()) onConfirm(device, alias) else onSkip(device) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                ) {
+                    Text(stringResource(R.string.alias_confirm), color = Color.Black)
+                }
+            },
+            dismissButton = {
+                Button(onClick = { onSkip(device) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F1F24))) {
+                    Text(stringResource(R.string.alias_skip), color = Color.White)
+                }
+            }
+        )
     }
 
     @Composable
@@ -369,6 +468,36 @@ class MainActivity : ComponentActivity() {
         Column {
             Text(text = title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Text(text = description, color = Color.Gray, fontSize = 12.sp, lineHeight = 16.sp)
+        }
+    }
+
+    @Composable
+    fun BluetoothWarningBanner() {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFF3D00).copy(alpha = 0.2f)),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0xFFFF3D00))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = Color(0xFFFF3D00)
+                )
+                Text(
+                    text = stringResource(R.string.warning_bluetooth_off),
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 
@@ -444,7 +573,8 @@ class MainActivity : ComponentActivity() {
         alarmDurationSeconds: MutableState<Int>,
         isAlarmSoundEnabled: MutableState<Boolean>,
         heartRatePoints: List<Int>,
-        crises: List<com.example.uggiu.service.CrisisEntry>
+        crises: List<CrisisEntry>,
+        deviceAliases: List<DeviceAlias> = emptyList()
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
@@ -484,6 +614,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 items(discoveredDevices) { device ->
+                    val alias = deviceAliases.find { it.address == device.address }?.alias
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -502,7 +633,7 @@ class MainActivity : ComponentActivity() {
                                 @SuppressLint("MissingPermission")
                                 val deviceName = device.name ?: stringResource(R.string.unknown_device)
                                 Text(
-                                    text = deviceName,
+                                    text = alias ?: deviceName,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -512,11 +643,19 @@ class MainActivity : ComponentActivity() {
                                     fontSize = 12.sp
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.List, // Reusing list icon for "select"
-                                contentDescription = stringResource(R.string.btn_terminate),
-                                tint = Color(0xFF00E5FF)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF00E5FF))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.btn_select),
+                                    color = Color.Black,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -603,8 +742,9 @@ class MainActivity : ComponentActivity() {
 
                             Text(text = statusText, fontSize = 14.sp, color = Color.LightGray)
                             if (isConnected && deviceAddress.isNotEmpty()) {
+                                val currentAlias = deviceAliases.find { it.address == deviceAddress }?.alias
                                 Text(
-                                    text = "ID: $deviceAddress",
+                                    text = "ID: ${currentAlias ?: deviceAddress}",
                                     fontSize = 11.sp,
                                     color = Color.Gray,
                                     fontWeight = FontWeight.Normal
@@ -671,12 +811,6 @@ class MainActivity : ComponentActivity() {
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (bpm > alarmBpmThreshold.value) Color(0xFFFF3D00) else Color(0xFF00E5FF)
-                            )
-                            Text(
-                                text = getBpmZoneText(bpm),
-                                fontSize = 13.sp,
-                                color = getBpmZoneColor(bpm),
-                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -1082,39 +1216,6 @@ class MainActivity : ComponentActivity() {
                 color = lineColor,
                 style = Stroke(width = 2.dp.toPx())
             )
-        }
-    }
-
-    @Composable
-    private fun getBpmZoneText(bpm: Int): String {
-        if (bpm == 0) return stringResource(R.string.zone_unknown)
-        val age = 30 // standard baseline fallback
-        val maxHr = 220 - age
-        val percentage = (bpm.toFloat() / maxHr) * 100
-
-        return when {
-            percentage < 50 -> stringResource(R.string.zone_rest)
-            percentage < 60 -> stringResource(R.string.zone_warmup)
-            percentage < 70 -> stringResource(R.string.zone_fat_burn)
-            percentage < 80 -> stringResource(R.string.zone_aerobic)
-            percentage < 90 -> stringResource(R.string.zone_anaerobic)
-            else -> stringResource(R.string.zone_danger)
-        }
-    }
-
-    private fun getBpmZoneColor(bpm: Int): Color {
-        if (bpm == 0) return Color.Gray
-        val age = 30
-        val maxHr = 220 - age
-        val percentage = (bpm.toFloat() / maxHr) * 100
-
-        return when {
-            percentage < 50 -> Color.Gray
-            percentage < 60 -> Color(0xFF9E9E9E)
-            percentage < 70 -> Color(0xFF4CAF50) // Green
-            percentage < 80 -> Color(0xFFFFEB3B) // Yellow
-            percentage < 90 -> Color(0xFFFF9800) // Orange
-            else -> Color(0xFFFF3D00) // Neon Red
         }
     }
 

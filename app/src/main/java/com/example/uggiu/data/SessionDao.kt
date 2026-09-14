@@ -40,4 +40,14 @@ interface SessionDao {
 
     @Delete
     suspend fun deleteCrisis(crisis: CrisisRecord)
+
+    // Device Aliases
+    @Query("SELECT * FROM device_aliases")
+    fun getAllAliases(): Flow<List<DeviceAlias>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAlias(deviceAlias: DeviceAlias)
+
+    @Query("SELECT * FROM device_aliases WHERE address = :address LIMIT 1")
+    suspend fun getAliasForAddress(address: String): DeviceAlias?
 }

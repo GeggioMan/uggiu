@@ -15,6 +15,7 @@ import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -117,7 +118,7 @@ class MainActivity : ComponentActivity() {
     private var isBound by mutableStateOf(false)
 
     companion object {
-        // private const val TAG = "MainActivity"
+        private const val TAG = "MainActivity"
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -136,6 +137,7 @@ class MainActivity : ComponentActivity() {
     private val closeAppReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == WorkoutService.ACTION_CLOSE_APP) {
+                Log.d(TAG, "ACTION_CLOSE_APP received, finishing activity")
                 finish()
             }
         }
@@ -143,37 +145,43 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        db = SessionDatabase.getDatabase(this)
-        
-        val prefs = getSharedPreferences("uggiu_prefs", MODE_PRIVATE)
-        val isDisclaimerAccepted = prefs.getBoolean("disclaimer_accepted", false)
+        Log.d(TAG, "onCreate started")
+        try {
+            val prefs = getSharedPreferences("uggiu_prefs", MODE_PRIVATE)
+            val isDisclaimerAccepted = prefs.getBoolean("disclaimer_accepted", false)
 
-        val filter = IntentFilter(WorkoutService.ACTION_CLOSE_APP)
-        ContextCompat.registerReceiver(this, closeAppReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            val filter = IntentFilter(WorkoutService.ACTION_CLOSE_APP)
+            ContextCompat.registerReceiver(this, closeAppReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
-        setContent {
-            MaterialTheme(
-                colorScheme = MaterialTheme.colorScheme.copy(
-                    background = Color(0xFF0A0A0C),
-                    surface = Color(0xFF141418),
-                    primary = Color(0xFF00E5FF),
-                    secondary = Color(0xFF4CAF50),
-                    error = Color(0xFFFF3D00),
-                )
-            ) {
-                var disclaimerAccepted by remember { mutableStateOf(isDisclaimerAccepted) }
-                
-                if (!disclaimerAccepted) {
-                    DisclaimerDialog(
-                        onConfirm = {
-                            prefs.edit().putBoolean("disclaimer_accepted", true).apply()
-                            disclaimerAccepted = true
-                        }
+            db = SessionDatabase.getDatabase(this)
+
+            setContent {
+                MaterialTheme(
+                    colorScheme = MaterialTheme.colorScheme.copy(
+                        background = Color(0xFF0A0A0C),
+                        surface = Color(0xFF141418),
+                        primary = Color(0xFF00E5FF),
+                        secondary = Color(0xFF4CAF50),
+                        error = Color(0xFFFF3D00),
                     )
-                } else {
-                    UggiuAppScreen()
+                ) {
+                    var disclaimerAccepted by remember { mutableStateOf(isDisclaimerAccepted) }
+                    
+                    if (!disclaimerAccepted) {
+                        DisclaimerDialog(
+                            onConfirm = {
+                                Log.d(TAG, "Disclaimer accepted")
+                                prefs.edit().putBoolean("disclaimer_accepted", true).apply()
+                                disclaimerAccepted = true
+                            }
+                        )
+                    } else {
+                        UggiuAppScreen()
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Crash in onCreate", e)
         }
     }
 

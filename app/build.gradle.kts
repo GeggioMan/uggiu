@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.uggiu"
+    namespace = "com.geggioman.uggiu"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.uggiu"
+        applicationId = "com.geggioman.uggiu"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -24,7 +24,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

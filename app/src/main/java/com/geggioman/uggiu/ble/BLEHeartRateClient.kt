@@ -1,4 +1,4 @@
-package com.example.uggiu.ble
+package com.geggioman.uggiu.ble
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
@@ -19,7 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
-import com.example.uggiu.R
+import com.geggioman.uggiu.R
 import java.util.UUID
 
 @SuppressLint("MissingPermission")

@@ -3,4 +3,4 @@
 # in /Users/diego.venturini/Library/Android/sdk/tools/proguard/proguard-android.txt
 # You can edit the include path and specify your own rules here.
 
--keep class com.example.uggiu.data.** { *; }
+-keep class com.geggioman.uggiu.data.** { *; }

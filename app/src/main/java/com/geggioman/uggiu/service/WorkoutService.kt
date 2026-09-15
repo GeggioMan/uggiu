@@ -1,4 +1,4 @@
-package com.example.uggiu.service
+package com.geggioman.uggiu.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -23,12 +23,12 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.example.uggiu.MainActivity
-import com.example.uggiu.R
-import com.example.uggiu.ble.BLEHeartRateClient
-import com.example.uggiu.data.CrisisRecord
-import com.example.uggiu.data.SessionDatabase
-import com.example.uggiu.data.WorkoutSession
+import com.geggioman.uggiu.MainActivity
+import com.geggioman.uggiu.R
+import com.geggioman.uggiu.ble.BLEHeartRateClient
+import com.geggioman.uggiu.data.CrisisRecord
+import com.geggioman.uggiu.data.SessionDatabase
+import com.geggioman.uggiu.data.WorkoutSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -110,11 +110,11 @@ class WorkoutService : Service() {
     private var autoSaveJob: Job? = null
 
     companion object {
-        private const val TAG = "WorkoutService"
+        // private const val TAG = "WorkoutService"
         private const val CHANNEL_ID = "workout_channel"
         private const val NOTIFICATION_ID = 1
-        const val ACTION_STOP_SERVICE = "com.example.uggiu.action.STOP_SERVICE"
-        const val ACTION_CLOSE_APP = "com.example.uggiu.action.CLOSE_APP"
+        const val ACTION_STOP_SERVICE = "com.geggioman.uggiu.action.STOP_SERVICE"
+        const val ACTION_CLOSE_APP = "com.geggioman.uggiu.action.CLOSE_APP"
     }
 
     inner class WorkoutBinder : Binder() {
@@ -259,7 +259,7 @@ class WorkoutService : Service() {
         manager.cancel(NOTIFICATION_ID)
 
         // Broadcast to close the Activity
-        sendBroadcast(Intent(ACTION_CLOSE_APP))
+        sendBroadcast(Intent(ACTION_CLOSE_APP).setPackage(packageName))
         
         autoSaveJob?.cancel()
         recordingJob?.cancel()

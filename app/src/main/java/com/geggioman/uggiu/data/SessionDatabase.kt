@@ -1,4 +1,4 @@
-package com.example.uggiu.data
+package com.geggioman.uggiu.data
 
 import android.content.Context
 import androidx.room.Database

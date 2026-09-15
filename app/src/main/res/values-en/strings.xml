@@ -88,7 +88,10 @@
     <string name="alarm_toast">WARNING! High heart rate: %1$d BPM</string>
     <string name="notif_channel_name">Workout Recording</string>
 
-    <string name="csv_export_error">Error during CSV export</string>
-    <string name="csv_export_chooser">Export session data</string>
+    <string name="disclaimer_title">Medical Disclaimer</string>
+    <string name="disclaimer_message">This application is not a medical device and is not certified for clinical diagnosis or monitoring of epilepsy. It uses Bluetooth heart sensors for personal support and monitoring purposes only.</string>
+    <string name="disclaimer_checkbox">I have read and understood the disclaimer</string>
+    <string name="disclaimer_confirm">I understand</string>
+
     <string name="permissions_denied">Necessary permissions not granted.</string>
 </resources>

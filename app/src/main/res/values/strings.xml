@@ -88,7 +88,10 @@
     <string name="alarm_toast">ATTENZIONE! Battito elevato: %1$d BPM</string>
     <string name="notif_channel_name">Registrazione Allenamento</string>
 
-    <string name="csv_export_error">Errore durante l\'esportazione CSV</string>
-    <string name="csv_export_chooser">Esporta dati sessione</string>
+    <string name="disclaimer_title">Avvertenza Medica</string>
+    <string name="disclaimer_message">Questa applicazione non è un dispositivo medico e non è certificata per la diagnosi o il monitoraggio clinico dell\'epilessia. Utilizza i sensori cardiaci Bluetooth a solo scopo di supporto e monitoraggio personale.</string>
+    <string name="disclaimer_checkbox">Ho letto e compreso l\'avvertenza</string>
+    <string name="disclaimer_confirm">Ho capito</string>
+
     <string name="permissions_denied">Permessi necessari non concessi.</string>
 </resources>

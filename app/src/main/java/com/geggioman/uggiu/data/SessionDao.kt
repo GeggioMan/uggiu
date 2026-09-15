@@ -1,4 +1,4 @@
-package com.example.uggiu.data
+package com.geggioman.uggiu.data
 
 import androidx.room.Dao
 import androidx.room.Delete

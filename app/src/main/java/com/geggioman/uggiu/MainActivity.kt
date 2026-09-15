@@ -1,4 +1,4 @@
-package com.example.uggiu
+package com.geggioman.uggiu
 
 import android.annotation.SuppressLint
 import android.Manifest
@@ -9,12 +9,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -99,11 +99,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
-import com.example.uggiu.data.SessionDatabase
-import com.example.uggiu.data.WorkoutSession
-import com.example.uggiu.data.DeviceAlias
-import com.example.uggiu.service.CrisisEntry
-import com.example.uggiu.service.WorkoutService
+import com.geggioman.uggiu.data.SessionDatabase
+import com.geggioman.uggiu.data.WorkoutSession
+import com.geggioman.uggiu.data.DeviceAlias
+import com.geggioman.uggiu.service.CrisisEntry
+import com.geggioman.uggiu.service.WorkoutService
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
     private var isBound by mutableStateOf(false)
 
     companion object {
-        private const val TAG = "MainActivity"
+        // private const val TAG = "MainActivity"
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -144,10 +144,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         db = SessionDatabase.getDatabase(this)
-
-        val intent = Intent(this, WorkoutService::class.java)
-        startService(intent)
-        bindService(intent, serviceConnection, BIND_AUTO_CREATE)
+        
+        val prefs = getSharedPreferences("uggiu_prefs", MODE_PRIVATE)
+        val isDisclaimerAccepted = prefs.getBoolean("disclaimer_accepted", false)
 
         val filter = IntentFilter(WorkoutService.ACTION_CLOSE_APP)
         ContextCompat.registerReceiver(this, closeAppReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
@@ -159,10 +158,21 @@ class MainActivity : ComponentActivity() {
                     surface = Color(0xFF141418),
                     primary = Color(0xFF00E5FF),
                     secondary = Color(0xFF4CAF50),
-                    error = Color(0xFFFF3D00)
+                    error = Color(0xFFFF3D00),
                 )
             ) {
-                UggiuAppScreen()
+                var disclaimerAccepted by remember { mutableStateOf(isDisclaimerAccepted) }
+                
+                if (!disclaimerAccepted) {
+                    DisclaimerDialog(
+                        onConfirm = {
+                            prefs.edit().putBoolean("disclaimer_accepted", true).apply()
+                            disclaimerAccepted = true
+                        }
+                    )
+                } else {
+                    UggiuAppScreen()
+                }
             }
         }
     }
@@ -181,7 +191,6 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         var showHistoryScreen by remember { mutableStateOf(false) }
         var showHelpDialog by remember { mutableStateOf(false) }
-        val sessions by db.sessionDao().getAllSessions().collectAsState(initial = emptyList())
         val crisesHistory by db.sessionDao().getAllCrises().collectAsState(initial = emptyList())
         val deviceAliases by db.sessionDao().getAllAliases().collectAsState(initial = emptyList())
 
@@ -203,13 +212,16 @@ class MainActivity : ComponentActivity() {
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             if (permissions.values.all { it }) {
-                currentService?.startScan()
+                // Permissions granted, start service
+                val intent = Intent(context, WorkoutService::class.java)
+                context.startService(intent)
+                context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
             } else {
                 Toast.makeText(context, context.getString(R.string.permissions_denied), Toast.LENGTH_SHORT).show()
             }
         }
 
-        fun checkPermissions(): Boolean {
+        fun checkPermissions(doRequest: Boolean = true): Boolean {
             val requiredPermissions = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
@@ -227,10 +239,19 @@ class MainActivity : ComponentActivity() {
             }
 
             return if (missing.isNotEmpty()) {
-                requestPermissionsLauncher.launch(missing.toTypedArray())
+                if (doRequest) requestPermissionsLauncher.launch(missing.toTypedArray())
                 false
             } else {
                 true
+            }
+        }
+
+        // Initialize service if permissions are already there
+        LaunchedEffect(Unit) {
+            if (checkPermissions(doRequest = false)) {
+                val intent = Intent(context, WorkoutService::class.java)
+                context.startService(intent)
+                context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
             }
         }
 
@@ -239,7 +260,7 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(lifecycleOwner, currentService, isSessionActive) {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    if (!isSessionActive && checkPermissions()) {
+                    if (!isSessionActive && checkPermissions(doRequest = true)) {
                         currentService?.startScan()
                     }
                 } else if (event == Lifecycle.Event.ON_PAUSE) {
@@ -299,7 +320,7 @@ class MainActivity : ComponentActivity() {
                         Icon(imageVector = Icons.Default.Info, contentDescription = stringResource(R.string.help_title), tint = Color.Gray)
                     }
 
-                    if (isConnected && rssi < 0) {
+                if (isConnected && (rssi < 0)) {
                         ProximityBadge(rssi = rssi)
                         Spacer(modifier = Modifier.width(8.dp))
                     }
@@ -397,6 +418,69 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    fun DisclaimerDialog(onConfirm: () -> Unit) {
+        var checked by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { /* Cannot dismiss without accepting */ },
+            containerColor = Color(0xFF141418),
+            title = {
+                Text(
+                    text = stringResource(R.string.disclaimer_title),
+                    color = Color(0xFFFF3D00),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.disclaimer_message),
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { checked = !checked }
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { checked = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFF00E5FF),
+                                uncheckedColor = Color.Gray
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.disclaimer_checkbox),
+                            color = Color.LightGray,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onConfirm,
+                    enabled = checked,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00E5FF),
+                        disabledContainerColor = Color.Gray
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.disclaimer_confirm),
+                        color = if (checked) Color.Black else Color.DarkGray,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        )
+    }
+
+    @Composable
     fun AliasDialog(
         device: BluetoothDevice,
         onDismiss: () -> Unit,
@@ -443,7 +527,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun HelpDialog(onDismiss: () -> Unit) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = onDismiss,
             containerColor = Color(0xFF141418),
             title = { Text(stringResource(R.string.help_title), color = Color(0xFF00E5FF), fontSize = 18.sp, fontWeight = FontWeight.Bold) },
@@ -453,6 +537,8 @@ class MainActivity : ComponentActivity() {
                     HelpItem(stringResource(R.string.help_battery_not_visible_title), stringResource(R.string.help_battery_not_visible_desc))
                     HelpItem(stringResource(R.string.help_permissions_title), stringResource(R.string.help_permissions_desc))
                     HelpItem(stringResource(R.string.help_background_title), stringResource(R.string.help_background_desc))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HelpItem(stringResource(R.string.disclaimer_title), stringResource(R.string.disclaimer_message))
                 }
             },
             confirmButton = {
@@ -563,12 +649,12 @@ class MainActivity : ComponentActivity() {
         activeSession: Boolean,
         isConnected: Boolean,
         isScanning: Boolean,
-        discoveredDevices: List<android.bluetooth.BluetoothDevice>,
+        discoveredDevices: List<BluetoothDevice>,
         statusText: String,
         deviceAddress: String,
         bpm: Int,
         onFinishSession: () -> Unit,
-        onSelectDevice: (android.bluetooth.BluetoothDevice) -> Unit,
+        onSelectDevice: (BluetoothDevice) -> Unit,
         alarmBpmThreshold: MutableState<Int>,
         alarmDurationSeconds: MutableState<Int>,
         isAlarmSoundEnabled: MutableState<Boolean>,
@@ -887,38 +973,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareSessionCsv(session: WorkoutSession) {
-        val dateString = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date(session.startTime))
-        val filename = "uggiu_Session_$dateString.csv"
-        val csvFile = File(cacheDir, filename)
-        try {
-            csvFile.bufferedWriter().use { writer ->
-                writer.write("Timestamp,BPM\n")
-                val start = session.startTime
-                val interval = 1000L
-                session.getHeartRateHistory().forEachIndexed { index, bpm ->
-                    val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(start + (index * interval)))
-                    writer.write("$time,$bpm\n")
-                }
-            }
-            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", csvFile)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_SUBJECT, "Dati Sessione uggiu")
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(intent, getString(R.string.csv_export_chooser)))
-        } catch (e: Exception) {
-            Toast.makeText(this, getString(R.string.csv_export_error), Toast.LENGTH_SHORT).show()
-            Log.e(TAG, "CSV Export error", e)
-        }
-    }
-
     @Composable
     fun HistoryScreen(
-        crises: List<com.example.uggiu.data.CrisisRecord>,
-        onDelete: (com.example.uggiu.data.CrisisRecord) -> Unit,
+        crises: List<com.geggioman.uggiu.data.CrisisRecord>,
+        onDelete: (com.geggioman.uggiu.data.CrisisRecord) -> Unit,
         onDeleteMultiple: (Set<Int>) -> Unit
     ) {
         var selectedIds by remember { mutableStateOf(setOf<Int>()) }
@@ -968,7 +1026,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun CrisisHistoryCard(
-        crisis: com.example.uggiu.data.CrisisRecord,
+        crisis: com.geggioman.uggiu.data.CrisisRecord,
         isSelected: Boolean,
         onToggleSelection: () -> Unit,
         onDelete: () -> Unit
@@ -1007,7 +1065,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun CrisisItem(crisis: com.example.uggiu.service.CrisisEntry) {
+    fun CrisisItem(crisis: CrisisEntry) {
         val isRunning = crisis.endTime == null
         val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val startTimeStr = timeFormatter.format(Date.from(crisis.startTime))

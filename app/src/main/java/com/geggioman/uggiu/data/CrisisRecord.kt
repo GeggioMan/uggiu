@@ -1,4 +1,4 @@
-package com.example.uggiu.data
+package com.geggioman.uggiu.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey

@@ -216,20 +216,7 @@ class MainActivity : ComponentActivity() {
         val crises by currentService?.crises?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
         val isBluetoothEnabled by currentService?.isBluetoothEnabled?.collectAsState(initial = true) ?: remember { mutableStateOf(true) }
 
-        val requestPermissionsLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestMultiplePermissions()
-        ) { permissions ->
-            if (permissions.values.all { it }) {
-                // Permissions granted, start service
-                val intent = Intent(context, WorkoutService::class.java)
-                context.startService(intent)
-                context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
-            } else {
-                Toast.makeText(context, context.getString(R.string.permissions_denied), Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        fun checkPermissions(doRequest: Boolean = true): Boolean {
+        fun getMissingPermissions(): List<String> {
             val requiredPermissions = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
@@ -240,26 +227,56 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
             }
-            requiredPermissions.add(Manifest.permission.BODY_SENSORS)
 
-            val missing = requiredPermissions.filter {
+            return requiredPermissions.filter {
                 ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
             }
+        }
 
+        var missingPermissionsState by remember { mutableStateOf(getMissingPermissions()) }
+
+        val requestPermissionsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { _ ->
+            val missing = getMissingPermissions()
+            missingPermissionsState = missing
+            if (missing.isEmpty()) {
+                val intent = Intent(context, WorkoutService::class.java)
+                context.startService(intent)
+                context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
+            } else {
+                Toast.makeText(context, context.getString(R.string.permissions_denied), Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        fun checkPermissions(doRequest: Boolean = true): Boolean {
+            val missing = getMissingPermissions()
+            missingPermissionsState = missing
             return if (missing.isNotEmpty()) {
-                if (doRequest) requestPermissionsLauncher.launch(missing.toTypedArray())
+                if (doRequest) {
+                    requestPermissionsLauncher.launch(missing.toTypedArray())
+                }
                 false
             } else {
                 true
             }
         }
 
-        // Initialize service if permissions are already there
+        // Initialize service if permissions are already granted, or request them on first launch
         LaunchedEffect(Unit) {
             if (checkPermissions(doRequest = false)) {
                 val intent = Intent(context, WorkoutService::class.java)
                 context.startService(intent)
                 context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
+            } else {
+                checkPermissions(doRequest = true)
+            }
+        }
+
+        // Trigger scan automatically when WorkoutService is bound and connected
+        LaunchedEffect(currentService) {
+            if (currentService != null && !isSessionActive && checkPermissions(doRequest = false)) {
+                currentService.startScan()
             }
         }
 
@@ -268,7 +285,8 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(lifecycleOwner, currentService, isSessionActive) {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    if (!isSessionActive && checkPermissions(doRequest = true)) {
+                    missingPermissionsState = getMissingPermissions()
+                    if (!isSessionActive && checkPermissions(doRequest = false)) {
                         currentService?.startScan()
                     }
                 } else if (event == Lifecycle.Event.ON_PAUSE) {
@@ -349,6 +367,38 @@ class MainActivity : ComponentActivity() {
                             contentDescription = stringResource(R.string.scan_found_title),
                             tint = if (showHistoryScreen) Color.Black else Color.White
                         )
+                    }
+                }
+            }
+
+            if (missingPermissionsState.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2C1414)),
+                    border = BorderStroke(1.dp, Color(0xFFFF3D00)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.permissions_denied),
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = { checkPermissions(doRequest = true) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3D00))
+                        ) {
+                            Text("Concedi", color = Color.White)
+                        }
                     }
                 }
             }
